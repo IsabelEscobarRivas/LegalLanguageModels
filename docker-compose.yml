@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+ web:
+   build: .
+   ports:
+     - "8000:8000"
+   volumes:
+     - .:/app
+     - ./static:/app/static
+   depends_on:
+     - db
+   environment:
+     - DATABASE_URL=postgresql://postgres:password@db:5432/documents_db
+     - AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
+     - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+     - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+
+ db:
+   image: postgres:13
+   environment:
+     - POSTGRES_USER=postgres
+     - POSTGRES_PASSWORD=password
+     - POSTGRES_DB=documents_db
+   volumes:
+     - postgres_data:/var/lib/postgresql/data
+
+volumes:
+ postgres_data:
