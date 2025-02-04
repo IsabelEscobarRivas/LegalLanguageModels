@@ -1,6 +1,7 @@
 const { useState, useRef, useEffect } = React;
 
 const DocumentIngestion = () => {
+   // ... [Previous state declarations remain the same] ...
    const [caseId, setCaseId] = useState('');
    const [visaType, setVisaType] = useState('');
    const [category, setCategory] = useState('');
@@ -9,10 +10,8 @@ const DocumentIngestion = () => {
    const [existingCases, setExistingCases] = useState([]);
    const [searchTerm, setSearchTerm] = useState('');
    const [fileSearchTerm, setFileSearchTerm] = useState('');
-   const [caseFiles, setCaseFiles] = useState([]);  // Added this line
    const fileInputRef = useRef(null);
 
-   // [Your EB1_CATEGORIES and EB2_CATEGORIES arrays remain the same]
    const EB1_CATEGORIES = [
        "A. Evidence of receipt of lesser nationally or internationally recognized prizes or awards for excellence",
        "B. Evidence of membership in associations in the field which demand outstanding achievement",
@@ -41,7 +40,7 @@ const DocumentIngestion = () => {
 
    useEffect(() => {
        fetchExistingCases();
-   }, [visaType]);
+   }, [visaType]); // Refetch when visa type changes
 
    const fetchExistingCases = async () => {
        try {
@@ -62,17 +61,6 @@ const DocumentIngestion = () => {
            setExistingCases(uniqueCases);
        } catch (error) {
            console.error('Error fetching cases:', error);
-       }
-   };
-
-   // Updated fetchCaseFiles function
-   const fetchCaseFiles = async (selectedCaseId) => {
-       try {
-           const response = await fetch(`/cases/?case_id=${selectedCaseId}`);
-           const cases = await response.json();
-           console.log('Fetched cases:', cases);  // Debug log
-       } catch (error) {
-           console.error('Error fetching case files:', error);
        }
    };
 
@@ -138,6 +126,12 @@ const DocumentIngestion = () => {
        caseData.id.toLowerCase().includes(searchTerm.toLowerCase()) &&
        (!visaType || caseData.visaTypes.includes(visaType))
    );
+
+   const fetchCaseFiles = async (caseId) => {
+       const response = await fetch(`/cases/?case_id=${caseId}`);
+       const cases = await response.json();
+       return cases.find((c) => c.case_id === caseId);
+   };
 
    return (
        <div className="max-w-4xl mx-auto p-6">
