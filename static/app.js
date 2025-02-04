@@ -1,6 +1,7 @@
 const { useState, useRef, useEffect } = React;
 
 const DocumentIngestion = () => {
+   // ... [Previous state declarations remain the same] ...
    const [caseId, setCaseId] = useState('');
    const [visaType, setVisaType] = useState('');
    const [category, setCategory] = useState('');
@@ -8,6 +9,7 @@ const DocumentIngestion = () => {
    const [uploadStatus, setUploadStatus] = useState('');
    const [existingCases, setExistingCases] = useState([]);
    const [searchTerm, setSearchTerm] = useState('');
+   const [fileSearchTerm, setFileSearchTerm] = useState('');
    const fileInputRef = useRef(null);
 
    const EB1_CATEGORIES = [
@@ -125,14 +127,11 @@ const DocumentIngestion = () => {
        (!visaType || caseData.visaTypes.includes(visaType))
    );
 
-        // Assuming you have a function to fetch a specific case's documents:
-const fetchCaseFiles = async (caseId) => {
-    const response = await fetch(`/cases/?case_id=${caseId}`);
-    const cases = await response.json();
-    // Filter or find the correct case by caseId from the response if needed
-    return cases.find((c) => c.case_id === caseId);
-  };
-  
+   const fetchCaseFiles = async (caseId) => {
+       const response = await fetch(`/cases/?case_id=${caseId}`);
+       const cases = await response.json();
+       return cases.find((c) => c.case_id === caseId);
+   };
 
    return (
        <div className="max-w-4xl mx-auto p-6">
@@ -225,6 +224,27 @@ const fetchCaseFiles = async (caseId) => {
                            placeholder="Or enter new Case ID"
                            className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
                        />
+
+                       {/* Files Display */}
+                       {caseId && (
+                           <div className="mt-4">
+                               <label className="block text-sm font-medium text-gray-700 mb-2">
+                                   Uploaded Files
+                               </label>
+                               <input
+                                   type="text"
+                                   value={fileSearchTerm}
+                                   onChange={(e) => setFileSearchTerm(e.target.value)}
+                                   placeholder="Search through files..."
+                                   className="w-full p-2 border rounded mb-4 focus:ring-2 focus:ring-blue-500"
+                               />
+                               <div className="max-h-40 overflow-y-auto border rounded">
+                                   <div className="p-4 text-gray-500 text-center">
+                                       Files for case {caseId} will appear here
+                                   </div>
+                               </div>
+                           </div>
+                       )}
                    </div>
                )}
 
