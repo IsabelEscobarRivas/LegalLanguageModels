@@ -164,8 +164,10 @@ const DocumentIngestion = () => {
    return (
        <div className="max-w-4xl mx-auto p-6">
            <div className="bg-white rounded-lg shadow-lg p-6">
-               <h1 className="text-2xl font-bold text-center mb-8 text-[#1a365d]">Document Upload</h1>
-               
+           <h1 className="custom-heading">
+                Xplore Immigration - Document Upload
+           </h1>
+
                {/* Visa Type Selection FIRST */}
                <div className="mb-6">
                    <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -375,3 +377,4 @@ const DocumentIngestion = () => {
 };
 
 ReactDOM.render(<DocumentIngestion />, document.getElementById('root'));
+
