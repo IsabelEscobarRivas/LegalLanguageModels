@@ -163,14 +163,14 @@ async def get_cases(db: Session = Depends(get_db)):
     # Group documents by case_id
     cases_map = {}
     for doc in documents:
-        if doc.case_id not in cases_map:
-            cases_map[doc.case_id] = {
+        if doc.case_id.lower() not in cases_map:
+            cases_map[doc.case_id.lower()] = {
                 "case_id": doc.case_id,
                 "visa_types": set(),
                 "files": []
             }
-        cases_map[doc.case_id]["visa_types"].add(doc.visa_type)
-        cases_map[doc.case_id]["files"].append({
+        cases_map[doc.case_id.lower()]["visa_types"].add(doc.visa_type)
+        cases_map[doc.case_id.lower()]["files"].append({
             "id": doc.id,
             "filename": doc.filename,
             "s3_url": doc.s3_url,
@@ -178,10 +178,11 @@ async def get_cases(db: Session = Depends(get_db)):
             "uploaded_at": doc.uploaded_at
         })
     
-    # Convert the visa_types set to a list for each case
+    # Convert visa_types from a set to a single string
     cases = []
     for case in cases_map.values():
-        case["visa_types"] = list(case["visa_types"])
+        case["visa_type"] = case["visa_types"].pop() if len(case["visa_types"]) == 1 else ", ".join(case["visa_types"])
+        del case["visa_types"]
         cases.append(case)
     
     return cases

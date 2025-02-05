@@ -1,7 +1,6 @@
 const { useState, useRef, useEffect } = React;
 
 const DocumentIngestion = () => {
-   // ... [Previous state declarations remain the same] ...
    const [caseId, setCaseId] = useState('');
    const [visaType, setVisaType] = useState('');
    const [category, setCategory] = useState('');
@@ -10,8 +9,10 @@ const DocumentIngestion = () => {
    const [existingCases, setExistingCases] = useState([]);
    const [searchTerm, setSearchTerm] = useState('');
    const [fileSearchTerm, setFileSearchTerm] = useState('');
+   const [caseFiles, setCaseFiles] = useState([]);
    const fileInputRef = useRef(null);
 
+   // ... [Previous CATEGORIES arrays remain the same] ...
    const EB1_CATEGORIES = [
        "A. Evidence of receipt of lesser nationally or internationally recognized prizes or awards for excellence",
        "B. Evidence of membership in associations in the field which demand outstanding achievement",
@@ -40,7 +41,7 @@ const DocumentIngestion = () => {
 
    useEffect(() => {
        fetchExistingCases();
-   }, [visaType]); // Refetch when visa type changes
+   }, [visaType]);
 
    const fetchExistingCases = async () => {
        try {
@@ -64,6 +65,33 @@ const DocumentIngestion = () => {
        }
    };
 
+   const fetchCaseFiles = async (selectedCaseId) => {
+       try {
+           console.log('Fetching files for case ID:', selectedCaseId);  // Log the case ID we're looking for
+           const response = await fetch('/cases/');
+           const cases = await response.json();
+           console.log('Response from /cases/:', cases);  // Log full response
+           
+           const caseData = cases.find(c => {
+               console.log('Comparing:', c.case_id, selectedCaseId); // Log each comparison
+               return c.case_id === selectedCaseId;
+           });
+           
+           console.log('Found case data:', caseData);  // Log found case data
+           
+           if (caseData && caseData.files) {
+               console.log('Setting files:', caseData.files);  // Log files before setting state
+               setCaseFiles(caseData.files);
+           } else {
+               console.log('No files found or invalid case data');
+               setCaseFiles([]);
+           }
+       } catch (error) {
+           console.error('Error in fetchCaseFiles:', error);
+           setCaseFiles([]);
+       }
+   };
+
    const handleDeleteCase = async (caseToDelete) => {
        if (window.confirm(`Are you sure you want to delete case ${caseToDelete}?`)) {
            try {
@@ -74,6 +102,7 @@ const DocumentIngestion = () => {
                    fetchExistingCases();
                    if (caseId === caseToDelete) {
                        setCaseId('');
+                       setCaseFiles([]); // Clear files when case is deleted
                    }
                }
            } catch (error) {
@@ -115,6 +144,7 @@ const DocumentIngestion = () => {
            setUploadStatus('Upload successful!');
            setSelectedFile(null);
            fetchExistingCases();
+           fetchCaseFiles(caseId); // Refresh files after upload
            
        } catch (error) {
            console.error('Upload error:', error);
@@ -127,11 +157,9 @@ const DocumentIngestion = () => {
        (!visaType || caseData.visaTypes.includes(visaType))
    );
 
-   const fetchCaseFiles = async (caseId) => {
-       const response = await fetch(`/cases/?case_id=${caseId}`);
-       const cases = await response.json();
-       return cases.find((c) => c.case_id === caseId);
-   };
+   const filteredFiles = caseFiles.filter(file =>
+       file.filename.toLowerCase().includes(fileSearchTerm.toLowerCase())
+   );
 
    return (
        <div className="max-w-4xl mx-auto p-6">
@@ -149,6 +177,7 @@ const DocumentIngestion = () => {
                                setVisaType('EB1');
                                setCaseId('');
                                setCategory('');
+                               setCaseFiles([]); // Clear files when visa type changes
                            }}
                            className={`p-2 rounded ${
                                visaType === 'EB1' 
@@ -163,6 +192,7 @@ const DocumentIngestion = () => {
                                setVisaType('EB2');
                                setCaseId('');
                                setCategory('');
+                               setCaseFiles([]); // Clear files when visa type changes
                            }}
                            className={`p-2 rounded ${
                                visaType === 'EB2' 
@@ -195,7 +225,11 @@ const DocumentIngestion = () => {
                                    className="flex justify-between items-center p-2 hover:bg-gray-100 cursor-pointer border-b"
                                >
                                    <div 
-                                       onClick={() => setCaseId(caseData.id)}
+                                       onClick={() => {
+                                           console.log('Selected case:', caseData.id); // Debug log
+                                           setCaseId(caseData.id);
+                                           fetchCaseFiles(caseData.id);
+                                       }}
                                        className="flex-1"
                                    >
                                        <span className={caseId === caseData.id ? 'font-bold' : ''}>
@@ -239,9 +273,28 @@ const DocumentIngestion = () => {
                                    className="w-full p-2 border rounded mb-4 focus:ring-2 focus:ring-blue-500"
                                />
                                <div className="max-h-40 overflow-y-auto border rounded">
-                                   <div className="p-4 text-gray-500 text-center">
-                                       Files for case {caseId} will appear here
-                                   </div>
+                                   {filteredFiles.length > 0 ? (
+                                       filteredFiles.map(file => (
+                                           <div 
+                                               key={file.id} 
+                                               className="flex justify-between items-center p-2 hover:bg-gray-100 border-b"
+                                           >
+                                               <div className="flex flex-col">
+                                                   <span className="font-medium">{file.filename}</span>
+                                                   <span className="text-sm text-gray-500">
+                                                       {file.category}
+                                                   </span>
+                                               </div>
+                                               <span className="text-sm text-gray-500">
+                                                   {new Date(file.uploaded_at).toLocaleDateString()}
+                                               </span>
+                                           </div>
+                                       ))
+                                   ) : (
+                                       <div className="p-4 text-gray-500 text-center">
+                                           No files uploaded for this case yet
+                                       </div>
+                                   )}
                                </div>
                            </div>
                        )}
