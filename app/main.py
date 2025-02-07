@@ -1,7 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, BackgroundTasks, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 import boto3
 from .database import get_db, Base, engine
@@ -46,6 +46,14 @@ Base.metadata.create_all(bind=engine)
 
 s3_client = boto3.client(
     "s3",
+    region_name="us-east-2",
+    aws_access_key_id=settings.AWS_ACCESS_KEY,
+    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
+)
+
+# Initialize Textract client
+textract_client = boto3.client(
+    'textract',
     region_name="us-east-2",
     aws_access_key_id=settings.AWS_ACCESS_KEY,
     aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
@@ -154,35 +162,134 @@ async def get_categories(visa_type: str):
         }
     else:
         raise HTTPException(status_code=400, detail="Invalid visa type")
-    
-@app.get("/cases/")
-async def get_cases(db: Session = Depends(get_db)):
-    # Fetch all documents, ordered by upload date (most recent first)
-    documents = db.query(Document).order_by(Document.uploaded_at.desc()).all()
-    
-    # Group documents by case_id
-    cases_map = {}
-    for doc in documents:
-        if doc.case_id.lower() not in cases_map:
-            cases_map[doc.case_id.lower()] = {
-                "case_id": doc.case_id,
-                "visa_types": set(),
-                "files": []
-            }
-        cases_map[doc.case_id.lower()]["visa_types"].add(doc.visa_type)
-        cases_map[doc.case_id.lower()]["files"].append({
+
+@app.get("/cases/{case_id}")
+async def get_case_files(case_id: str, db: Session = Depends(get_db)):
+    try:
+        documents = db.query(Document)\
+            .filter(Document.case_id == case_id)\
+            .order_by(Document.uploaded_at.desc())\
+            .all()
+        
+        if not documents:
+            return {"files": []}
+
+        files = [{
             "id": doc.id,
             "filename": doc.filename,
             "s3_url": doc.s3_url,
             "category": doc.category,
-            "uploaded_at": doc.uploaded_at
-        })
+            "uploaded_at": doc.uploaded_at,
+            "visa_type": doc.visa_type,
+            "preview_url": f"/preview/{doc.id}",
+            "download_url": f"/download/{doc.id}"
+        } for doc in documents]
+
+        return {"files": files}
+    except Exception as e:
+        print(f"Error fetching case files: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/files/{file_id}")
+async def delete_file(file_id: str, db: Session = Depends(get_db)):
+    try:
+        document = db.query(Document).filter(Document.id == file_id).first()
+        if not document:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        s3_key = document.s3_url.split(f"{settings.S3_BUCKET_NAME}.s3.amazonaws.com/")[1]
+        try:
+            s3_client.delete_object(
+                Bucket=settings.S3_BUCKET_NAME,
+                Key=s3_key
+            )
+        except Exception as e:
+            print(f"S3 Delete Error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"S3 Delete Error: {str(e)}")
+
+        db.delete(document)
+        db.commit()
+
+        return {"message": "File deleted successfully"}
+    except Exception as e:
+        print(f"Delete Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/documents/{case_id}")
+async def delete_case(case_id: str, db: Session = Depends(get_db)):
+    try:
+        documents = db.query(Document).filter(Document.case_id == case_id).all()
+        
+        for document in documents:
+            s3_key = document.s3_url.split(f"{settings.S3_BUCKET_NAME}.s3.amazonaws.com/")[1]
+            try:
+                s3_client.delete_object(
+                    Bucket=settings.S3_BUCKET_NAME,
+                    Key=s3_key
+                )
+            except Exception as e:
+                print(f"S3 Delete Error for file {document.filename}: {str(e)}")
+                
+            db.delete(document)
+        
+        db.commit()
+        return {"message": f"Case {case_id} and all associated files deleted successfully"}
+    except Exception as e:
+        print(f"Case Delete Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/preview/{file_id}")
+async def preview_file(file_id: str, db: Session = Depends(get_db)):
+    try:
+        document = db.query(Document).filter(Document.id == file_id).first()
+        if not document:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        s3_key = document.s3_url.split(f"{settings.S3_BUCKET_NAME}.s3.amazonaws.com/")[1]
+        
+        # Get the file from S3
+        response = s3_client.get_object(Bucket=settings.S3_BUCKET_NAME, Key=s3_key)
+        file_bytes = response['Body'].read()
+
+        # Call Amazon Textract
+        textract_response = textract_client.detect_document_text(
+            Document={'Bytes': file_bytes}
+        )
+        
+        # Extract text from the Textract response
+        extracted_text = ""
+        for item in textract_response["Blocks"]:
+            if item["BlockType"] == "LINE":
+                extracted_text += item["Text"] + "\n"
+
+        return {"text": extracted_text}
     
-    # Convert visa_types from a set to a single string
-    cases = []
-    for case in cases_map.values():
-        case["visa_type"] = case["visa_types"].pop() if len(case["visa_types"]) == 1 else ", ".join(case["visa_types"])
-        del case["visa_types"]
-        cases.append(case)
-    
-    return cases
+    except Exception as e:
+        print(f"Preview Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/download/{file_id}")
+async def download_file(file_id: str, db: Session = Depends(get_db)):
+    try:
+        document = db.query(Document).filter(Document.id == file_id).first()
+        if not document:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        s3_key = document.s3_url.split(f"{settings.S3_BUCKET_NAME}.s3.amazonaws.com/")[1]
+        
+        try:
+            response = s3_client.get_object(Bucket=settings.S3_BUCKET_NAME, Key=s3_key)
+            return StreamingResponse(
+                response['Body'],
+                media_type='application/octet-stream',
+                headers={
+                    'Content-Disposition': f'attachment; filename="{document.filename}"'
+                }
+            )
+        except Exception as e:
+            print(f"S3 Download Error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"S3 Download Error: {str(e)}")
+
+    except Exception as e:
+        print(f"Download Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
