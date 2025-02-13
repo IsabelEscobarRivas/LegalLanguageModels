@@ -11,6 +11,13 @@ import uuid
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
+import PyPDF2
+import pytesseract
+from PIL import Image
+from io import BytesIO
+from docx import Document as DocxDocument  # Renamed to avoid conflict with your modelimport tempfile
+import os
+import tempfile
 
 app = FastAPI()
 
@@ -82,6 +89,8 @@ def upload_to_s3(file: UploadFile, case_id: str, visa_type: str, category: str):
         print(f"S3 Upload Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"S3 Upload Error: {str(e)}")
 
+
+
 @app.post("/upload/")
 async def upload_file(
     file: UploadFile = File(...),
@@ -93,14 +102,86 @@ async def upload_file(
     try:
         print(f"Processing upload for case: {case_id}")
         
-        s3_url = upload_to_s3(file, case_id, visa_type, category)
+        # Read file content once
+        file_bytes = await file.read()
         
+        # Initialize these variables
+        num_pages = None
+        extracted_text = ""
+        text_extraction_status = "not_attempted"
+        
+        # Upload to S3
+        file_id = str(uuid.uuid4())
+        file_extension = file.filename.split(".")[-1].lower()
+        s3_key = f"raw/{case_id}/{visa_type}/{category}/{file_id}_{file.filename}"
+        
+        try:
+            s3_client.put_object(
+                Bucket=settings.S3_BUCKET_NAME,
+                Key=s3_key,
+                Body=file_bytes
+            )
+            s3_url = f"https://{settings.S3_BUCKET_NAME}.s3.amazonaws.com/{s3_key}"
+        except Exception as e:
+            print(f"S3 Upload Error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"S3 Upload Error: {str(e)}")
+        
+        # Extract text using the new method
+        try:
+            # Create a temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as temp_file:
+                temp_file.write(file_bytes)
+                temp_file_path = temp_file.name
+
+            # Extract text based on file type
+            if file_extension == "pdf":
+                with open(temp_file_path, 'rb') as file_handle:
+                    pdf_reader = PyPDF2.PdfReader(file_handle)
+                    num_pages = len(pdf_reader.pages)
+                    extracted_text = ''
+                    for page_num in range(num_pages):
+                        page = pdf_reader.pages[page_num]
+                        try:
+                            extracted_text += page.extract_text() + "\n"
+                        except Exception as page_error:
+                            print(f"Error extracting text from page {page_num}: {str(page_error)}")
+                            extracted_text += f"[Error extracting page {page_num}]\n"
+            elif file_extension == "docx":
+                doc = DocxDocument(temp_file_path)
+                extracted_text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
+            else:
+                extracted_text = "Unsupported file type"
+
+            text_extraction_status = "completed"
+            
+            # Clean up temporary file
+            os.unlink(temp_file_path)
+            
+        except Exception as extract_error:
+            print(f"Text Extraction Error: {str(extract_error)}")
+            extracted_text = ""
+            text_extraction_status = "failed"
+        
+        # Generate metadata
+        document_metadata = {
+            "file_size": len(file_bytes),
+            "content_type": file.content_type if hasattr(file, 'content_type') else f"application/{file_extension}",
+            "upload_timestamp": datetime.utcnow().isoformat(),
+            "original_filename": file.filename,
+            "text_extraction_status": text_extraction_status,
+            "file_extension": file_extension,
+            "pages": num_pages
+        }
+        
+        # Create document with all fields
         document = Document(
             filename=file.filename,
             s3_url=s3_url,
             case_id=case_id,
             visa_type=visa_type,
-            category=category
+            category=category,
+            extracted_text=extracted_text,
+            document_metadata=document_metadata
         )
         
         db.add(document)
@@ -109,12 +190,12 @@ async def upload_file(
         return {
             "status": "success",
             "message": f"File uploaded successfully for case {case_id}",
-            "file_url": s3_url
+            "file_url": s3_url,
+            "extracted_text_status": text_extraction_status
         }
     except Exception as e:
         print(f"Upload Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/documents/")
 async def get_documents(
     db: Session = Depends(get_db),
@@ -241,27 +322,60 @@ async def delete_case(case_id: str, db: Session = Depends(get_db)):
 @app.get("/preview/{file_id}")
 async def preview_file(file_id: str, db: Session = Depends(get_db)):
     try:
+        # First check if we already have extracted text in the database
         document = db.query(Document).filter(Document.id == file_id).first()
         if not document:
             raise HTTPException(status_code=404, detail="File not found")
 
+        if document.extracted_text:
+            return {"text": document.extracted_text}
+
+        # If no stored text, get file from S3
         s3_key = document.s3_url.split(f"{settings.S3_BUCKET_NAME}.s3.amazonaws.com/")[1]
-        
-        # Get the file from S3
         response = s3_client.get_object(Bucket=settings.S3_BUCKET_NAME, Key=s3_key)
         file_bytes = response['Body'].read()
 
-        # Call Amazon Textract
-        textract_response = textract_client.detect_document_text(
-            Document={'Bytes': file_bytes}
-        )
-        
-        # Extract text from the Textract response
-        extracted_text = ""
-        for item in textract_response["Blocks"]:
-            if item["BlockType"] == "LINE":
-                extracted_text += item["Text"] + "\n"
+        try:
+            # Try Textract first (since it worked well before)
+            textract_response = textract_client.detect_document_text(
+                Document={'Bytes': file_bytes}
+            )
+            
+            extracted_text = ""
+            for item in textract_response["Blocks"]:
+                if item["BlockType"] == "LINE":
+                    extracted_text += item["Text"] + "\n"
+                    
+        except Exception as textract_error:
+            print(f"Textract failed, falling back to PyPDF2: {str(textract_error)}")
+            # Fall back to PyPDF2 if Textract fails
+            file_extension = document.filename.split(".")[-1].lower()
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as temp_file:
+                temp_file.write(file_bytes)
+                temp_file_path = temp_file.name
 
+            if file_extension == "pdf":
+                with open(temp_file_path, 'rb') as file_handle:
+                    pdf_reader = PyPDF2.PdfReader(file_handle)
+                    extracted_text = ''
+                    for page in pdf_reader.pages:
+                        try:
+                            extracted_text += page.extract_text() + "\n"
+                        except Exception:
+                            extracted_text += "[Error extracting page]\n"
+            elif file_extension == "docx":
+                doc = DocxDocument(temp_file_path)
+                extracted_text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
+            else:
+                extracted_text = "Unsupported file type"
+
+            os.unlink(temp_file_path)
+
+        # Store the extracted text for future use
+        document.extracted_text = extracted_text
+        db.commit()
+            
         return {"text": extracted_text}
     
     except Exception as e:
