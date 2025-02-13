@@ -18,6 +18,7 @@ from io import BytesIO
 from docx import Document as DocxDocument  # Renamed to avoid conflict with your modelimport tempfile
 import os
 import tempfile
+from pdf2image import convert_from_path
 
 app = FastAPI()
 
@@ -327,57 +328,88 @@ async def preview_file(file_id: str, db: Session = Depends(get_db)):
         if not document:
             raise HTTPException(status_code=404, detail="File not found")
 
-        if document.extracted_text:
+        # If we already have extracted text, return it
+        if document.extracted_text and document.extracted_text.strip():
             return {"text": document.extracted_text}
 
-        # If no stored text, get file from S3
+        # Get file from S3
         s3_key = document.s3_url.split(f"{settings.S3_BUCKET_NAME}.s3.amazonaws.com/")[1]
         response = s3_client.get_object(Bucket=settings.S3_BUCKET_NAME, Key=s3_key)
         file_bytes = response['Body'].read()
 
+        extracted_text = ""
+        
+        # 1. First try Textract for non-scanned PDFs and Word docs
         try:
-            # Try Textract first (since it worked well before)
+            print("Attempting Textract extraction...")
             textract_response = textract_client.detect_document_text(
                 Document={'Bytes': file_bytes}
             )
             
-            extracted_text = ""
             for item in textract_response["Blocks"]:
                 if item["BlockType"] == "LINE":
                     extracted_text += item["Text"] + "\n"
                     
         except Exception as textract_error:
-            print(f"Textract failed, falling back to PyPDF2: {str(textract_error)}")
-            # Fall back to PyPDF2 if Textract fails
-            file_extension = document.filename.split(".")[-1].lower()
-            
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as temp_file:
-                temp_file.write(file_bytes)
-                temp_file_path = temp_file.name
+            print(f"Textract failed: {str(textract_error)}")
+            extracted_text = ""
 
-            if file_extension == "pdf":
-                with open(temp_file_path, 'rb') as file_handle:
-                    pdf_reader = PyPDF2.PdfReader(file_handle)
-                    extracted_text = ''
+        # 2. If Textract didn't work, try OCR for scanned documents
+        if not extracted_text.strip():
+            print("Attempting OCR extraction...")
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_input_file:
+                    temp_input_path = temp_input_file.name
+                    temp_input_file.write(file_bytes)
+
+                # Convert PDF to images
+                images = convert_from_path(temp_input_path)
+                
+                # Process each page
+                for image in images:
+                    # Use pytesseract to extract text from image
+                    page_text = pytesseract.image_to_string(image)
+                    extracted_text += page_text + "\n\n"
+
+                # Clean up temporary file
+                os.unlink(temp_input_path)
+
+            except Exception as ocr_error:
+                print(f"OCR failed: {str(ocr_error)}")
+                if os.path.exists(temp_input_path):
+                    os.unlink(temp_input_path)
+                extracted_text = ""
+
+        # 3. If both failed, try PyPDF2 as last resort
+        if not extracted_text.strip():
+            print("Attempting PyPDF2 extraction...")
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
+                    temp_file.write(file_bytes)
+                    temp_file_path = temp_file.name
+                
+                with open(temp_file_path, 'rb') as file:
+                    pdf_reader = PyPDF2.PdfReader(file)
                     for page in pdf_reader.pages:
                         try:
                             extracted_text += page.extract_text() + "\n"
-                        except Exception:
-                            extracted_text += "[Error extracting page]\n"
-            elif file_extension == "docx":
-                doc = DocxDocument(temp_file_path)
-                extracted_text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
-            else:
-                extracted_text = "Unsupported file type"
+                        except Exception as page_error:
+                            print(f"Error on page: {str(page_error)}")
+                
+                os.unlink(temp_file_path)
+            except Exception as pdf_error:
+                print(f"PyPDF2 failed: {str(pdf_error)}")
 
-            os.unlink(temp_file_path)
+        # Store successfully extracted text
+        if extracted_text and extracted_text.strip():
+            document.extracted_text = extracted_text
+            db.commit()
+            print("Successfully stored extracted text")
+            return {"text": extracted_text}
+        else:
+            print("No text could be extracted using any method")
+            return {"text": "No text could be extracted from this document"}
 
-        # Store the extracted text for future use
-        document.extracted_text = extracted_text
-        db.commit()
-            
-        return {"text": extracted_text}
-    
     except Exception as e:
         print(f"Preview Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
