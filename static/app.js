@@ -16,6 +16,10 @@ const DocumentIngestion = () => {
     const [isPreviewLoading, setIsPreviewLoading] = useState(false);
     const [showPreviewModal, setShowPreviewModal] = useState(false);
     const [selectedPreviewFile, setSelectedPreviewFile] = useState(null);
+    // New state variables for document type
+    const [documentType, setDocumentType] = useState('');
+    const [documentTypes, setDocumentTypes] = useState([]);
+    
 	const EB1_CATEGORIES = [
         "A. Evidence of receipt of lesser nationally or internationally recognized prizes or awards for excellence",
         "B. Evidence of membership in associations in the field which demand outstanding achievement",
@@ -45,6 +49,28 @@ const DocumentIngestion = () => {
     useEffect(() => {
         fetchExistingCases();
     }, [visaType]);
+
+    // New effect to fetch document types when visa type changes
+    useEffect(() => {
+        if (visaType) {
+            fetchDocumentTypes();
+        }
+    }, [visaType]);
+
+    // New function to fetch document types
+    const fetchDocumentTypes = async () => {
+        try {
+            const response = await fetch(`/document_types/${visaType}`);
+            const data = await response.json();
+            if (response.ok && data.document_types) {
+                setDocumentTypes(data.document_types);
+                setDocumentType(''); // Reset selection when visa type changes
+            }
+        } catch (error) {
+            console.error('Error fetching document types:', error);
+            setDocumentTypes([]);
+        }
+    };
 
     const fetchExistingCases = async () => {
         try {
@@ -171,7 +197,7 @@ const DocumentIngestion = () => {
     };
 
     const handleUpload = async () => {
-        if (!selectedFile || !caseId || !visaType || !category) {
+        if (!selectedFile || !caseId || !visaType || !category || !documentType) {
             setUploadStatus('Please fill in all fields and select a file');
             return;
         }
@@ -181,6 +207,7 @@ const DocumentIngestion = () => {
         formData.append('case_id', caseId);
         formData.append('visa_type', visaType);
         formData.append('category', category);
+        formData.append('document_type', documentType); // Add document type to form data
 
         try {
             setUploadStatus('Uploading...');
@@ -234,6 +261,7 @@ const DocumentIngestion = () => {
                                 setVisaType('EB1');
                                 setCaseId('');
                                 setCategory('');
+                                setDocumentType('');
                                 setCaseFiles([]);
                             }}
                             className={`p-2 rounded ${
@@ -249,6 +277,7 @@ const DocumentIngestion = () => {
                                 setVisaType('EB2');
                                 setCaseId('');
                                 setCategory('');
+                                setDocumentType('');
                                 setCaseFiles([]);
                             }}
                             className={`p-2 rounded ${
@@ -415,8 +444,29 @@ const DocumentIngestion = () => {
                     </div>
                 )}
 
+                {/* Document Type Selection - NEW SECTION */}
+                {visaType && caseId && category && (
+                    <div className="mb-6">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Document Type
+                        </label>
+                        <select
+                            value={documentType}
+                            onChange={(e) => setDocumentType(e.target.value)}
+                            className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                        >
+                            <option value="">Select a document type</option>
+                            {documentTypes.map((type) => (
+                                <option key={type} value={type}>
+                                    {type.replace(/_/g, ' ')}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+
                 {/* File Upload Section LAST */}
-                {category && (
+                {category && documentType && (
                     <div className="mt-8 space-y-4">
                         <input
                             type="file"

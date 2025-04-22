@@ -1,0 +1,126 @@
+{
+  "letter": "\n        # Visa Application Letter for Case Pereira\n        \n        ## Introduction\n        \n        \n        ## Background\n        [Generated education for background based on 2 chunks]\n\n[Generated skills for background based on 2 chunks]\n\n[Generated certifications for background based on 1 chunks]\n        \n        ## Experience\n        [Generated work_history for experience based on 4 chunks]\n\n[Generated achievements for experience based on 2 chunks]\n\n[Generated impact for experience based on 2 chunks]\n        \n        ## Expert Opinion\n        [Generated credentials for expert_opinion based on 2 chunks]\n\n[Generated evaluation for expert_opinion based on 1 chunks]\n\n[Generated recommendation for expert_opinion based on 1 chunks]\n        \n        ## Conclusion\n        \n        ",
+  "metadata": {
+    "case": {
+      "case_id": "Pereira",
+      "visa_types": [
+        "EB2"
+      ],
+      "categories": [
+        "02_Applicant_Background"
+      ],
+      "document_count": 1
+    },
+    "sections": {
+      "introduction": {
+        "source_citations": {},
+        "chunk_count": 2
+      },
+      "background": {
+        "source_citations": {
+          "education": [
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "  \n           \nApril 29, 2023\n  \nUS Citizenship and Immigration Services  \n  \nIn Re:\t\n \n \nForm I-140..."
+            },
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "Dr. Ana Paula Pereira is an Advanced Degree accomplished professional with recognized advanced exper..."
+            }
+          ],
+          "skills": [
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "  \n           \nApril 29, 2023\n  \nUS Citizenship and Immigration Services  \n  \nIn Re:\t\n \n \nForm I-140..."
+            },
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "Dr. Ana Paula Pereira is an Advanced Degree accomplished professional with recognized advanced exper..."
+            }
+          ],
+          "certifications": [
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "Dr. Ana Paula Pereira is an Advanced Degree accomplished professional with recognized advanced exper..."
+            }
+          ]
+        },
+        "chunk_count": 2
+      },
+      "experience": {
+        "source_citations": {
+          "work_history": [
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "  \n           \nApril 29, 2023\n  \nUS Citizenship and Immigration Services  \n  \nIn Re:\t\n \n \nForm I-140..."
+            },
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "Dr. Ana Paula Pereira is an Advanced Degree accomplished professional with recognized advanced exper..."
+            },
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "  \n           \nApril 29, 2023\n  \nUS Citizenship and Immigration Services  \n  \nIn Re:\t\n \n \nForm I-140..."
+            },
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "Dr. Ana Paula Pereira is an Advanced Degree accomplished professional with recognized advanced exper..."
+            }
+          ],
+          "achievements": [
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "Dr. Ana Paula Pereira is an Advanced Degree accomplished professional with recognized advanced exper..."
+            },
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "Dr. Ana Paula Pereira is an Advanced Degree accomplished professional with recognized advanced exper..."
+            }
+          ],
+          "impact": [
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "Dr. Ana Paula Pereira is an Advanced Degree accomplished professional with recognized advanced exper..."
+            },
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "Dr. Ana Paula Pereira is an Advanced Degree accomplished professional with recognized advanced exper..."
+            }
+          ]
+        },
+        "chunk_count": 4
+      },
+      "expert_opinion": {
+        "source_citations": {
+          "credentials": [
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "Dr. Ana Paula Pereira is an Advanced Degree accomplished professional with recognized advanced exper..."
+            },
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "  \n           \nApril 29, 2023\n  \nUS Citizenship and Immigration Services  \n  \nIn Re:\t\n \n \nForm I-140..."
+            }
+          ],
+          "evaluation": [
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "Dr. Ana Paula Pereira is an Advanced Degree accomplished professional with recognized advanced exper..."
+            }
+          ],
+          "recommendation": [
+            {
+              "filename": "Introduction - Ana Paula Pereira.docx",
+              "text_snippet": "Dr. Ana Paula Pereira is an Advanced Degree accomplished professional with recognized advanced exper..."
+            }
+          ]
+        },
+        "chunk_count": 2
+      },
+      "conclusion": {
+        "source_citations": {},
+        "chunk_count": 2
+      }
+    }
+  }
+}

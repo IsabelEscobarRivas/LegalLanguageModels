@@ -20,6 +20,34 @@ import os
 import tempfile
 from pdf2image import convert_from_path
 
+# Add this near the top of your main.py file
+DOCUMENT_TYPE_TO_SECTIONS = {
+    # EB2 NIW Document Types and their mappings to letter sections
+    "Resume": ["Professional_Profile", "Career_Vision", "Track_Record_of_Success"],
+    "Academic_Records": ["Education_Summary", "Academic_Credentials_Summary", "Academic_Evaluation_Summary"],
+    "Professional_Plan": ["Intent_to_Work_in_Field", "Career_Vision", "Proposed_Endeavor_Overview"],
+    "Letters_of_Support": ["Professional_Standing", "Recognition_and_Influence", "Track_Record_of_Impact"],
+    "Expert_Opinion_Letter": ["Expert_Opinion", "Expert_Reasoning_Economic_Benefit", "Expert_Endorsement"],
+    "Certifications": ["Continued_Education_Certification", "Certification_Summary"],
+    "Salary_History": ["Impact_of_Endeavor", "Salary_Benchmarking"],
+    "Industry_Reports": ["Labor_Market_Context", "Policy_Alignment", "Field_Overview"],
+    "Publications": ["Field_Contributions", "Academic_Credentials_Summary"],
+    "Memberships": ["Recognition_and_Standing", "Certifications_Continued_Learning"]
+}
+
+# Define category-to-document type mappings
+CATEGORY_TO_DOCUMENT_TYPES = {
+    # EB2 mappings
+    "01_General_Documents": ["Resume", "Professional_Plan"],
+    "02_Applicant_Background": ["Resume", "Academic_Records", "Certifications"],
+    "03_NIW_Criterion_1_Significant_Merit_and_Importance": ["Professional_Plan", "Industry_Reports", "Field_Overview"],
+    "04_NIW_Criterion_2_Positioned_to_Advance_the_Field": ["Resume", "Professional_Plan", "Project_Examples"],
+    "05_NIW_Criterion_3_Benefit_to_USA_Without_Labor_Certification": ["Expert_Opinion_Letter", "Industry_Reports"],
+    "06_Letters_of_Recommendation": ["Letters_of_Support", "Expert_Opinion_Letter"],
+    "07_Peer_Reviewed_Publications": ["Publications"],
+    "08_Additional_Supporting_Documents": ["Memberships", "Certifications", "Salary_History"]
+}
+
 app = FastAPI()
 
 # Mount static files
@@ -98,24 +126,35 @@ async def upload_file(
     case_id: str = Form(...),
     visa_type: str = Form(...),
     category: str = Form(...),
+    document_type: Optional[str] = Form(None),  # Added document_type as optional
     db: Session = Depends(get_db)
 ):
     try:
         print(f"Processing upload for case: {case_id}")
-        
+
         # Read file content once
         file_bytes = await file.read()
-        
-        # Initialize these variables
+
+        # Initialize variables
         num_pages = None
         extracted_text = ""
         text_extraction_status = "not_attempted"
-        
+
+        # Determine document type and relevant sections
+        doc_type = document_type
+        if not doc_type:
+            # Infer document type from category
+            possible_types = CATEGORY_TO_DOCUMENT_TYPES.get(category, [])
+            doc_type = possible_types[0] if possible_types else "Other_Document"
+
+        # Map document type to relevant sections
+        relevant_sections = DOCUMENT_TYPE_TO_SECTIONS.get(doc_type, [])
+
         # Upload to S3
         file_id = str(uuid.uuid4())
         file_extension = file.filename.split(".")[-1].lower()
         s3_key = f"raw/{case_id}/{visa_type}/{category}/{file_id}_{file.filename}"
-        
+
         try:
             s3_client.put_object(
                 Bucket=settings.S3_BUCKET_NAME,
@@ -126,7 +165,7 @@ async def upload_file(
         except Exception as e:
             print(f"S3 Upload Error: {str(e)}")
             raise HTTPException(status_code=500, detail=f"S3 Upload Error: {str(e)}")
-        
+
         # Extract text using the new method
         try:
             # Create a temporary file
@@ -154,15 +193,15 @@ async def upload_file(
                 extracted_text = "Unsupported file type"
 
             text_extraction_status = "completed"
-            
+
             # Clean up temporary file
             os.unlink(temp_file_path)
-            
+
         except Exception as extract_error:
             print(f"Text Extraction Error: {str(extract_error)}")
             extracted_text = ""
             text_extraction_status = "failed"
-        
+
         # Generate metadata
         document_metadata = {
             "file_size": len(file_bytes),
@@ -171,9 +210,10 @@ async def upload_file(
             "original_filename": file.filename,
             "text_extraction_status": text_extraction_status,
             "file_extension": file_extension,
-            "pages": num_pages
+            "pages": num_pages,
+            "relevant_sections_mapping": {section: True for section in relevant_sections}  # Include mapping in metadata
         }
-        
+
         # Create document with all fields
         document = Document(
             filename=file.filename,
@@ -181,22 +221,27 @@ async def upload_file(
             case_id=case_id,
             visa_type=visa_type,
             category=category,
+            document_type=doc_type,
+            relevant_sections=relevant_sections,
             extracted_text=extracted_text,
             document_metadata=document_metadata
         )
-        
+
         db.add(document)
         db.commit()
-        
+
         return {
             "status": "success",
             "message": f"File uploaded successfully for case {case_id}",
             "file_url": s3_url,
+            "document_type": doc_type,
+            "relevant_sections": relevant_sections,
             "extracted_text_status": text_extraction_status
         }
     except Exception as e:
         print(f"Upload Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/documents/")
 async def get_documents(
     db: Session = Depends(get_db),
@@ -210,6 +255,29 @@ async def get_documents(
         query = query.filter(Document.visa_type == visa_type)
     return query.order_by(Document.uploaded_at.desc()).all()
 
+@app.get("/document_types/{visa_type}")
+async def get_document_types(visa_type: str):
+    """Get available document types for a specific visa type"""
+    if visa_type == "EB1":
+        return {
+            "document_types": [
+                "Resume",
+                "Academic_Records",
+                "Professional_Plan",
+                "Letters_of_Support",
+                "Publications",
+                "Expert_Opinion_Letter",
+                "Award_Certificates",
+                "Memberships"
+            ]
+        }
+    elif visa_type == "EB2":
+        return {
+            "document_types": list(set(sum([types for types in CATEGORY_TO_DOCUMENT_TYPES.values()], [])))
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Invalid visa type")
+        
 @app.get("/categories/{visa_type}")
 async def get_categories(visa_type: str):
     if visa_type == "EB1":
@@ -245,6 +313,41 @@ async def get_categories(visa_type: str):
     else:
         raise HTTPException(status_code=400, detail="Invalid visa type")
 
+
+@app.get("/document_types/{visa_type}")
+async def get_document_types(visa_type: str):
+    if visa_type == "EB1":
+        return {
+            "document_types": [
+                "Resume",
+                "Academic_Records",
+                "Professional_Plan",
+                "Letters_of_Support",
+                "Publications",
+                "Expert_Opinion_Letter",
+                "Award_Certificates",
+                "Memberships"
+            ]
+        }
+    elif visa_type == "EB2":
+        return {
+            "document_types": [
+                "Resume",
+                "Academic_Records",
+                "Professional_Plan",
+                "Letters_of_Support",
+                "Expert_Opinion_Letter",
+                "Certifications",
+                "Salary_History",
+                "Industry_Reports",
+                "Publications",
+                "Memberships"
+            ]
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Invalid visa type")
+        
+    
 @app.get("/cases/{case_id}")
 async def get_case_files(case_id: str, db: Session = Depends(get_db)):
     try:
