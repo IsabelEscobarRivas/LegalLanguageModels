@@ -14,3 +14,5 @@ class Document(Base):
     extracted_text = Column(Text, nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow)
     document_metadata = Column(JSON, nullable=True)  # Changed from metadata to document_metadata
+    document_type = Column(String, index=True)
+    relevant_sections = Column(JSON, nullable=True)
