@@ -1,1 +1,3 @@
-.qodo
+*.pkl
+ket_rag_corpus*.pkl
+__pycache__/
