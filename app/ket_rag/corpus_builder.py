@@ -183,14 +183,61 @@ class CorpusBuilder:
         self.ket_rag.keyword_chunk_graph.clear()
         for i, chunk in enumerate(self.ket_rag.chunks):
             case_id = chunk["metadata"].get("case_id", "unknown")
+            relevant_sections = chunk["metadata"].get("relevant_sections", [])
             doc = self.ket_rag.nlp(chunk["text"])
             keywords = set()
             for token in doc:
                 if token.pos_ in ["NOUN", "PROPN"] and len(token.text) > 2:
                     keywords.add(token.lemma_.lower())
+            
             for keyword in keywords:
+                # Original case-scoped keyword
                 scoped_keyword = f"case_{case_id}_kw_{keyword}"
                 self.ket_rag.keyword_chunk_graph.add_edge(scoped_keyword, f"chunk_{i}")
+                
+                # Section-scoped keywords
+                for section in relevant_sections:
+                    section_scoped_keyword = f"section_{section}_kw_{keyword}"
+                    self.ket_rag.keyword_chunk_graph.add_edge(section_scoped_keyword, f"chunk_{i}")
+
+                # Add document type-based connections
+        doc_type_chunks = {}
+        for i, chunk in enumerate(self.ket_rag.chunks):
+            doc_type = chunk["metadata"].get("document_type")
+            if doc_type:
+                doc_type_chunks.setdefault(doc_type, []).append(i)
+        
+        # Connect chunks of the same document type
+        for doc_type, chunk_indices in doc_type_chunks.items():
+            if len(chunk_indices) > 1:
+                for i in range(len(chunk_indices)):
+                    for j in range(i + 1, len(chunk_indices)):
+                        if chunk_indices[i] != chunk_indices[j]:  # Avoid self-loops
+                            self.ket_rag.knowledge_graph.add_edge(
+                                chunk_indices[i], chunk_indices[j],
+                                weight=0.3,
+                                edge_type="same_document_type"
+                            )
+
+        # Add relevant sections-based connections
+        section_chunks = {}
+        for i, chunk in enumerate(self.ket_rag.chunks):
+            relevant_sections = chunk["metadata"].get("relevant_sections", [])
+            if relevant_sections:
+                for section in relevant_sections:
+                    section_chunks.setdefault(section, []).append(i)
+        
+        # Connect chunks that belong to the same letter section
+        for section, chunk_indices in section_chunks.items():
+            if len(chunk_indices) > 1:
+                for i in range(len(chunk_indices)):
+                    for j in range(i + 1, len(chunk_indices)):
+                        if chunk_indices[i] != chunk_indices[j]:  # Avoid self-loops
+                            self.ket_rag.knowledge_graph.add_edge(
+                                chunk_indices[i], chunk_indices[j],
+                                weight=0.4,
+                                edge_type="same_relevant_section"
+                            )
 
         logger.info(f"Built case-isolated knowledge graph with {self.ket_rag.knowledge_graph.number_of_nodes()} nodes and {self.ket_rag.knowledge_graph.number_of_edges()} edges")
 
@@ -224,15 +271,37 @@ class CorpusBuilder:
                     tree_graph.add_node(category_node_id, node_type="category", case_id=case_id, visa_type=visa_type, category=category)
                     tree_graph.add_edge(visa_node_id, category_node_id)
 
+        # Add document type level and connect documents
         for i, chunk in enumerate(self.ket_rag.chunks):
             case_id = chunk["metadata"].get("case_id")
             visa_type = chunk["metadata"].get("visa_type")
             category = chunk["metadata"].get("category")
+            document_type = chunk["metadata"].get("document_type")
+            
             if case_id and visa_type and category:
                 category_node_id = f"case_{case_id}_visa_{visa_type}_cat_{category}"
-                doc_node_id = f"{category_node_id}_doc_{i}"
-                tree_graph.add_node(doc_node_id, node_type="document", case_id=case_id, visa_type=visa_type, category=category, chunk_id=i, text=chunk["text"][:100])
-                tree_graph.add_edge(category_node_id, doc_node_id)
+                
+                if document_type:
+                    # Create document type level
+                    doc_type_node_id = f"{category_node_id}_type_{document_type}"
+                    if not tree_graph.has_node(doc_type_node_id):
+                        tree_graph.add_node(doc_type_node_id, 
+                                           node_type="document_type", 
+                                           case_id=case_id, 
+                                           visa_type=visa_type, 
+                                           category=category,
+                                           document_type=document_type)
+                        tree_graph.add_edge(category_node_id, doc_type_node_id)
+                    
+                    # Connect document to document type
+                    doc_node_id = f"{doc_type_node_id}_doc_{i}"
+                    tree_graph.add_node(doc_node_id, node_type="document", case_id=case_id, visa_type=visa_type, category=category, document_type=document_type, chunk_id=i, text=chunk["text"][:100])
+                    tree_graph.add_edge(doc_type_node_id, doc_node_id)
+                else:
+                    # Fallback for documents without document_type
+                    doc_node_id = f"{category_node_id}_doc_{i}"
+                    tree_graph.add_node(doc_node_id, node_type="document", case_id=case_id, visa_type=visa_type, category=category, chunk_id=i, text=chunk["text"][:100])
+                    tree_graph.add_edge(category_node_id, doc_node_id)
 
         self.ket_rag.customer_tree = tree_graph
         logger.info(f"Built customer tree with {tree_graph.number_of_nodes()} nodes and {tree_graph.number_of_edges()} edges")
