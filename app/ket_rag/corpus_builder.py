@@ -114,29 +114,29 @@ class CorpusBuilder:
         if len(self.ket_rag.chunks) == 0:
             logger.warning("No chunks processed, cannot build knowledge graph")
             return
-
-        logger.info(f"Building isolated knowledge graph from {len(self.ket_rag.chunks)} chunks...")
+    
+        logger.info(f"Building isolated knowledge graph from {len(self.ket_rag.    chunks)} chunks...")
         self.ket_rag.knowledge_graph.clear()
         case_chunks = {}
         document_chunks = {}
-
+    
         for i, chunk in enumerate(self.ket_rag.chunks):
-            self.ket_rag.knowledge_graph.add_node(i, text=chunk["text"], metadata=chunk["metadata"])
+            self.ket_rag.knowledge_graph.add_node(i, text=chunk["text"],     metadata=chunk["metadata"])
             case_id = chunk["metadata"].get("case_id", "unknown")
             case_chunks.setdefault(case_id, []).append((i, chunk))
             doc_id = chunk["metadata"].get("id", f"unknown_{i}")
             doc_key = f"{case_id}_{doc_id}"
             document_chunks.setdefault(doc_key, []).append(i)
-
+    
         for case_id, case_data in case_chunks.items():
             if len(case_data) < 2:
                 continue
-
+    
             case_doc_ids = set()
             for _, chunk in case_data:
                 doc_id = chunk["metadata"].get("id", "unknown")
                 case_doc_ids.add(doc_id)
-
+    
             case_doc_ids = list(case_doc_ids)
             for i in range(len(case_doc_ids)):
                 for j in range(i + 1, len(case_doc_ids)):
@@ -147,7 +147,7 @@ class CorpusBuilder:
                     doc1_chunks = document_chunks.get(doc1_key, [])
                     doc2_chunks = document_chunks.get(doc2_key, [])
                     if doc1_chunks and doc2_chunks:
-                        # Create bi-directional edges between documents in the same case
+                        # Create bi-directional edges between documents in the same     case
                         self.ket_rag.knowledge_graph.add_edge(
                             doc1_chunks[0], doc2_chunks[0],
                             weight=0.5,
@@ -159,13 +159,13 @@ class CorpusBuilder:
                             weight=0.5,
                             edge_type="same_case_explicit"
                         )
-
+    
             case_indices = [idx for idx, _ in case_data]
             case_embeddings = self.ket_rag.chunk_embeddings[case_indices]
             similarity_matrix = cosine_similarity(case_embeddings)
-            logger.info(f"Similarity matrix for case {case_id} with {len(case_indices)} chunks:")
+            logger.info(f"Similarity matrix for case {case_id} with {len    (case_indices)} chunks:")
             logger.info(similarity_matrix)
-
+    
             threshold = 0.4
             for i in range(len(case_indices)):
                 for j in range(len(case_indices)):
@@ -175,32 +175,12 @@ class CorpusBuilder:
                             weight=float(similarity_matrix[i, j]),
                             edge_type="same_case_similarity"
                         )
-
+    
         pagerank = nx.pagerank(self.ket_rag.knowledge_graph)
         for node, score in pagerank.items():
             self.ket_rag.knowledge_graph.nodes[node]['pagerank'] = score
-
-        self.ket_rag.keyword_chunk_graph.clear()
-        for i, chunk in enumerate(self.ket_rag.chunks):
-            case_id = chunk["metadata"].get("case_id", "unknown")
-            relevant_sections = chunk["metadata"].get("relevant_sections", [])
-            doc = self.ket_rag.nlp(chunk["text"])
-            keywords = set()
-            for token in doc:
-                if token.pos_ in ["NOUN", "PROPN"] and len(token.text) > 2:
-                    keywords.add(token.lemma_.lower())
-            
-            for keyword in keywords:
-                # Original case-scoped keyword
-                scoped_keyword = f"case_{case_id}_kw_{keyword}"
-                self.ket_rag.keyword_chunk_graph.add_edge(scoped_keyword, f"chunk_{i}")
-                
-                # Section-scoped keywords
-                for section in relevant_sections:
-                    section_scoped_keyword = f"section_{section}_kw_{keyword}"
-                    self.ket_rag.keyword_chunk_graph.add_edge(section_scoped_keyword, f"chunk_{i}")
-
-                # Add document type-based connections
+    
+        # Add document type-based connections
         doc_type_chunks = {}
         for i, chunk in enumerate(self.ket_rag.chunks):
             doc_type = chunk["metadata"].get("document_type")
@@ -218,11 +198,11 @@ class CorpusBuilder:
                                 weight=0.3,
                                 edge_type="same_document_type"
                             )
-
+    
         # Add relevant sections-based connections
         section_chunks = {}
         for i, chunk in enumerate(self.ket_rag.chunks):
-            relevant_sections = chunk["metadata"].get("relevant_sections", [])
+            relevant_sections = chunk["metadata"].get("relevant_sections") or []
             if relevant_sections:
                 for section in relevant_sections:
                     section_chunks.setdefault(section, []).append(i)
@@ -238,9 +218,30 @@ class CorpusBuilder:
                                 weight=0.4,
                                 edge_type="same_relevant_section"
                             )
-
-        logger.info(f"Built case-isolated knowledge graph with {self.ket_rag.knowledge_graph.number_of_nodes()} nodes and {self.ket_rag.knowledge_graph.number_of_edges()} edges")
-
+    
+        # Enhanced keyword chunk graph with section awareness
+        self.ket_rag.keyword_chunk_graph.clear()
+        for i, chunk in enumerate(self.ket_rag.chunks):
+            case_id = chunk["metadata"].get("case_id", "unknown")
+            relevant_sections = chunk["metadata"].get("relevant_sections") or []
+            doc = self.ket_rag.nlp(chunk["text"])
+            keywords = set()
+            for token in doc:
+                if token.pos_ in ["NOUN", "PROPN"] and len(token.text) > 2:
+                    keywords.add(token.lemma_.lower())
+            
+            for keyword in keywords:
+                # Original case-scoped keyword
+                scoped_keyword = f"case_{case_id}_kw_{keyword}"
+                self.ket_rag.keyword_chunk_graph.add_edge(scoped_keyword, f"chunk_    {i}")
+                
+                # Section-scoped keywords - handle None case
+                if relevant_sections:  # Check if not None/empty
+                    for section in relevant_sections:
+                        section_scoped_keyword = f"section_{section}_kw_{keyword}"
+                        self.ket_rag.keyword_chunk_graph.add_edge    (section_scoped_keyword, f"chunk_{i}")
+    
+        logger.info(f"Built case-isolated knowledge graph with {self.ket_rag.    knowledge_graph.number_of_nodes()} nodes and {self.ket_rag.knowledge_graph.    number_of_edges()} edges")
     def build_customer_tree(self) -> nx.DiGraph:
         case_ids = set(chunk["metadata"].get("case_id") for chunk in self.ket_rag.chunks if chunk["metadata"].get("case_id"))
         logger.info(f"Building trees for {len(case_ids)} unique customers")
