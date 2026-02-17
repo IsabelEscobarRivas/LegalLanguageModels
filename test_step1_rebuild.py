@@ -33,11 +33,11 @@ def test_basic_rebuild():
         print("✓ Saving enhanced corpus...")
         builder.save_model("ket_rag_corpus_enhanced.pkl")
         
-        print("\n🎉 TEST 1 PASSED: Basic rebuild successful!")
+        print("\nTEST 1 PASSED: Basic rebuild successful!")
         return True, ket_rag
         
     except Exception as e:
-        print(f"\n❌ TEST 1 FAILED: {str(e)}")
+        print(f"\n TEST 1 FAILED: {str(e)}")
         import traceback
         traceback.print_exc()
         return False, None
