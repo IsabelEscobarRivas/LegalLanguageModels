@@ -9,9 +9,110 @@
     <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load V2 API Service BEFORE app.js -->
+    <script src="/static/js/v2-api-service.js"></script>
 </head>
 <body class="bg-gray-100">
     <div id="root"></div>
+    <script type="text/babel">
+    // Authentication Wrapper for V1 DocumentIngestion
+    const { useState, useEffect } = React;
+
+    function AuthWrapper() {
+        const [auth, setAuth] = useState(window.V2ApiService.getAuthState());
+        const [showLogin, setShowLogin] = useState(!auth.token);
+        const [loginLoading, setLoginLoading] = useState(false);
+        const [loginError, setLoginError] = useState('');
+        const [username, setUsername] = useState('');
+        const [password, setPassword] = useState('');
+        const [lawFirmId, setLawFirmId] = useState(auth.lawFirmId || '');
+
+        useEffect(() => {
+            // Listen for storage changes (e.g., logout in another tab)
+            const onStorage = () => {
+                const newAuth = window.V2ApiService.getAuthState();
+                setAuth(newAuth);
+                setShowLogin(!newAuth.token);
+            };
+            window.addEventListener('storage', onStorage);
+            return () => window.removeEventListener('storage', onStorage);
+        }, []);
+
+        const handleLogin = async (e) => {
+            e.preventDefault();
+            setLoginLoading(true);
+            setLoginError('');
+            try {
+                const data = await window.V2ApiService.login({ username, password, lawFirmId });
+                setAuth(window.V2ApiService.getAuthState());
+                setShowLogin(false);
+            } catch (err) {
+                setLoginError('Login failed. Please check your credentials and law firm ID.');
+            } finally {
+                setLoginLoading(false);
+            }
+        };
+
+        const handleLogout = () => {
+            window.V2ApiService.clearAuthState();
+            setAuth(window.V2ApiService.getAuthState());
+            setShowLogin(true);
+        };
+
+        // Multi-tenant header
+        const LawFirmHeader = () => (
+            <div className="bg-white shadow p-4 flex justify-between items-center mb-6">
+                <div>
+                    <span className="font-bold text-lg text-[#1a365d]">Xplore Immigration</span>
+                    {auth.lawFirmName && (
+                        <span className="ml-4 text-gray-700">Law Firm: <span className="font-semibold">{auth.lawFirmName}</span></span>
+                    )}
+                    {auth.userRole && (
+                        <span className="ml-4 text-gray-500">Role: {auth.userRole}</span>
+                    )}
+                </div>
+                <button onClick={handleLogout} className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Logout</button>
+            </div>
+        );
+
+        // Login Modal
+        const LoginModal = () => (
+            <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+                <form onSubmit={handleLogin} className="bg-white rounded-lg shadow-lg p-8 w-full max-w-md">
+                    <h2 className="text-2xl font-bold mb-4 text-[#1a365d]">Login</h2>
+                    <div className="mb-4">
+                        <label className="block mb-1 font-medium">Username</label>
+                        <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="w-full p-2 border rounded" required autoFocus />
+                    </div>
+                    <div className="mb-4">
+                        <label className="block mb-1 font-medium">Password</label>
+                        <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-2 border rounded" required />
+                    </div>
+                    <div className="mb-4">
+                        <label className="block mb-1 font-medium">Law Firm ID</label>
+                        <input type="text" value={lawFirmId} onChange={e => setLawFirmId(e.target.value)} className="w-full p-2 border rounded" required />
+                    </div>
+                    {loginError && <div className="text-red-600 mb-2">{loginError}</div>}
+                    <button type="submit" className="w-full bg-[#1a365d] text-white py-2 rounded font-semibold" disabled={loginLoading}>
+                        {loginLoading ? 'Logging in...' : 'Login'}
+                    </button>
+                </form>
+            </div>
+        );
+
+        if (!auth.token || showLogin) {
+            return <LoginModal />;
+        }
+        return (
+            <>
+                <LawFirmHeader />
+                <DocumentIngestion />
+            </>
+        );
+    }
+
+    ReactDOM.render(<AuthWrapper />, document.getElementById("root"));
+    </script>
     <script type="text/babel" src="/static/app.js"></script>
 </body>
 </html>
