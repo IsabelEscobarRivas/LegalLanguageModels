@@ -1,3 +1,4 @@
 *.pkl
 ket_rag_corpus*.pkl
 __pycache__/
+.env
