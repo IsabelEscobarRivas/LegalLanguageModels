@@ -1,7 +1,8 @@
-from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, BackgroundTasks, Form
+from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 import boto3
 from .database import get_db, Base, engine
@@ -15,7 +16,7 @@ import PyPDF2
 import pytesseract
 from PIL import Image
 from io import BytesIO
-from docx import Document as DocxDocument  # Renamed to avoid conflict with your modelimport tempfile
+from docx import Document as DocxDocument  # Renamed to avoid conflict with your model
 import os
 import tempfile
 from pdf2image import convert_from_path
@@ -64,6 +65,17 @@ app.add_middleware(
 @app.get("/")
 async def read_root():
     return FileResponse("static/index.html")
+
+@app.get("/health")
+async def health(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ok", "database": "ok"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail={"status": "error", "database": str(e)},
+        )
 
 class DocumentSchema(BaseModel):
     id: str
@@ -255,29 +267,6 @@ async def get_documents(
         query = query.filter(Document.visa_type == visa_type)
     return query.order_by(Document.uploaded_at.desc()).all()
 
-@app.get("/document_types/{visa_type}")
-async def get_document_types(visa_type: str):
-    """Get available document types for a specific visa type"""
-    if visa_type == "EB1":
-        return {
-            "document_types": [
-                "Resume",
-                "Academic_Records",
-                "Professional_Plan",
-                "Letters_of_Support",
-                "Publications",
-                "Expert_Opinion_Letter",
-                "Award_Certificates",
-                "Memberships"
-            ]
-        }
-    elif visa_type == "EB2":
-        return {
-            "document_types": list(set(sum([types for types in CATEGORY_TO_DOCUMENT_TYPES.values()], [])))
-        }
-    else:
-        raise HTTPException(status_code=400, detail="Invalid visa type")
-        
 @app.get("/categories/{visa_type}")
 async def get_categories(visa_type: str):
     if visa_type == "EB1":
