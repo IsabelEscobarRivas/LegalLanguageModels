@@ -138,6 +138,13 @@ class CaseEventList(BaseModel):
     events: list[ProcessingEventDetail]
 
 
+class CaseEventListPaginated(BaseModel):
+    case_id: str
+    events: list[ProcessingEventDetail]
+    next_cursor: Optional[str] = None
+    limit: int
+
+
 # ---------- Retrieval (Sprint 2 / S3-D01) ----------
 
 class RetrieveRequest(BaseModel):
