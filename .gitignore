@@ -2,3 +2,4 @@
 ket_rag_corpus*.pkl
 __pycache__/
 .env
+.DS_Store
