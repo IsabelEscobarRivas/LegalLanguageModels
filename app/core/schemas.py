@@ -144,3 +144,38 @@ class RetrieveRequest(BaseModel):
     query: str
     top_k: int = Field(default=5, ge=1, le=20)
     min_similarity: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+# ---------- Classification feedback and coverage (Sprint 3) ----------
+
+class ClassificationFeedbackRequest(BaseModel):
+    action: Literal["confirmed", "rejected", "corrected"]
+    corrected_criteria_id: Optional[str] = None
+    corrected_section_affinity_id: Optional[str] = None
+    corrected_confidence_score: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0
+    )
+    rationale: Optional[str] = None
+
+
+class ClassificationFeedbackResponse(BaseModel):
+    id: str
+    classification_result_id: str
+    action: str
+    created_at: datetime
+
+
+class CoverageCriterionResult(BaseModel):
+    criteria_id: str
+    criteria_code: str
+    criteria_label: str
+    gap_status: str
+    chunk_count: int
+
+
+class CoverageResponse(BaseModel):
+    case_id: str
+    visa_type: str
+    overall_status: str
+    evaluated_at: str
+    coverage: list[CoverageCriterionResult]
