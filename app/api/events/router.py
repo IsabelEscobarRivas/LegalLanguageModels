@@ -39,6 +39,8 @@ ALLOWED_EVENT_TYPES = {
     "chunking_failed",
     "embedding_completed",
     "embedding_failed",
+    "classification_completed",
+    "classification_failed",
 }
 
 
