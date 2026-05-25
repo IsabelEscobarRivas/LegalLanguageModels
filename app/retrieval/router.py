@@ -16,7 +16,6 @@ import os
 
 import openai
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -29,6 +28,7 @@ from app.core.models import (
     Embedding,
     RetrievalLog,
 )
+from app.core.schemas import RetrieveRequest
 from app.ingestion.chunker import chunk_document_version
 from app.ingestion.embedder import (
     EMBEDDING_DIMENSIONS,
@@ -40,11 +40,6 @@ from app.ingestion.embedder import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["retrieval"])
-
-
-class RetrieveRequest(BaseModel):
-    query: str
-    top_k: int = Field(default=5, ge=1, le=20)
 
 
 @router.post(
@@ -237,12 +232,24 @@ def retrieve(
                     }
                 )
 
+        # Apply min_similarity threshold post-query. pgvector cosine-distance
+        # operators do not filter cleanly at the SQL layer without index
+        # changes; post-query filtering is correct here. When min_similarity
+        # is 0.0 the filter is skipped so behavior is identical to pre-S3-D01.
+        if body.min_similarity > 0.0:
+            result_list = [
+                r for r in result_list
+                if r["similarity_score"] >= body.min_similarity
+            ]
+
         # Step E: append RetrievalLog (always, even for empty results).
+        # results_count is the post-threshold count, per S3-D01.
         log = RetrievalLog(
             case_id=case_id,
             query_text=body.query,
             query_embedding_id=None,  # Sprint 2 does not store query embeddings
             top_k=body.top_k,
+            min_similarity=body.min_similarity,
             results_count=len(result_list),
         )
         db.add(log)

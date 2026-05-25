@@ -8,6 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.auth import TokenClaims, get_current_claims, require_case_access
 from app.core.database import get_db
 from app.core.models import Case, Document, DocumentVersion
 from app.core.schemas import (
@@ -22,7 +23,12 @@ router = APIRouter(tags=["cases"])
 
 
 @router.post("/cases", response_model=CaseResponse, status_code=201)
-def create_case(payload: CaseCreate, db: Session = Depends(get_db)) -> CaseResponse:
+def create_case(
+    *,
+    payload: CaseCreate,
+    db: Session = Depends(get_db),
+    claims: TokenClaims = Depends(get_current_claims),
+) -> CaseResponse:
     case = Case(case_ref=payload.case_ref, visa_type=payload.visa_type)
     db.add(case)
     try:
@@ -39,7 +45,9 @@ def create_case(payload: CaseCreate, db: Session = Depends(get_db)) -> CaseRespo
 
 @router.get("/cases/{case_id}/documents", response_model=CaseDocumentList)
 def list_case_documents(
-    case_id: str, db: Session = Depends(get_db)
+    *,
+    case_id: str = Depends(require_case_access),
+    db: Session = Depends(get_db),
 ) -> CaseDocumentList:
     case = db.query(Case).filter(Case.id == case_id).first()
     if case is None:

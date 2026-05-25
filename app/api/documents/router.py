@@ -10,6 +10,7 @@ import logging
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
+from app.core.auth import require_case_access
 from app.core.database import get_db
 from app.core.models import Document, DocumentVersion, ProcessingEvent
 from app.core.schemas import (
@@ -39,7 +40,8 @@ router = APIRouter(tags=["documents"])
     status_code=201,
 )
 async def upload_document(
-    case_id: str,
+    *,
+    case_id: str = Depends(require_case_access),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> DocumentUploadResponse:
@@ -67,7 +69,10 @@ async def upload_document(
     response_model=DocumentDetail,
 )
 def get_document(
-    case_id: str, document_id: str, db: Session = Depends(get_db)
+    *,
+    case_id: str = Depends(require_case_access),
+    document_id: str,
+    db: Session = Depends(get_db),
 ) -> DocumentDetail:
     document = (
         db.query(Document)
@@ -113,7 +118,10 @@ def get_document(
     response_model=DocumentVersionList,
 )
 def list_document_versions(
-    case_id: str, document_id: str, db: Session = Depends(get_db)
+    *,
+    case_id: str = Depends(require_case_access),
+    document_id: str,
+    db: Session = Depends(get_db),
 ) -> DocumentVersionList:
     document = (
         db.query(Document)
@@ -141,7 +149,8 @@ def list_document_versions(
     response_model=VersionEventList,
 )
 def list_version_events(
-    case_id: str,
+    *,
+    case_id: str = Depends(require_case_access),
     document_id: str,
     version_id: str,
     db: Session = Depends(get_db),

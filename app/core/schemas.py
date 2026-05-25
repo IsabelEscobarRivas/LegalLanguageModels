@@ -136,3 +136,11 @@ class ProcessingEventDetail(BaseModel):
 class CaseEventList(BaseModel):
     case_id: str
     events: list[ProcessingEventDetail]
+
+
+# ---------- Retrieval (Sprint 2 / S3-D01) ----------
+
+class RetrieveRequest(BaseModel):
+    query: str
+    top_k: int = Field(default=5, ge=1, le=20)
+    min_similarity: float = Field(default=0.0, ge=0.0, le=1.0)

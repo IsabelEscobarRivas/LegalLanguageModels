@@ -16,6 +16,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -327,6 +328,7 @@ class RetrievalLog(Base):
     )
     top_k = Column(Integer, nullable=False)
     results_count = Column(Integer, nullable=False)
+    min_similarity = Column(Float, nullable=False, default=0.0)
     created_at = Column(
         DateTime,
         nullable=False,
