@@ -3,6 +3,8 @@
 Mirrors the cumulative state after Alembic revisions:
   * 0002_v2_foundation  — cases, documents, document_versions, processing_events, chunks (placeholder)
   * 0003_v2_retrieval   — chunks fields, embeddings, retrieval_logs
+  * 0004_min_similarity — retrieval_logs.min_similarity
+  * 0005_classification_schema — criteria/section reference, classification, coverage
 
 UUID primary keys are stored as String(36) for cross-DB compatibility.
 """
@@ -13,6 +15,7 @@ import uuid
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -330,6 +333,231 @@ class RetrievalLog(Base):
     results_count = Column(Integer, nullable=False)
     min_similarity = Column(Float, nullable=False, default=0.0)
     created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class CriteriaReference(Base):
+    __tablename__ = "criteria_reference"
+    __table_args__ = (
+        CheckConstraint(
+            "visa_type IN ('EB1', 'EB2', 'BOTH')",
+            name="ck_criteria_reference_visa_type",
+        ),
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    code = Column(String(50), nullable=False, unique=True, index=True)
+    visa_type = Column(String(20), nullable=False, index=True)
+    label = Column(String(200), nullable=False)
+    description = Column(Text, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    display_order = Column(Integer, nullable=False)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class SectionAffinityReference(Base):
+    __tablename__ = "section_affinity_reference"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    code = Column(String(50), nullable=False, unique=True)
+    label = Column(String(100), nullable=False)
+    description = Column(Text, nullable=False)
+    display_order = Column(Integer, nullable=False)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class ClassificationResult(Base):
+    __tablename__ = "classification_results"
+    __table_args__ = (
+        CheckConstraint(
+            "confidence_score >= 0.0 AND confidence_score <= 1.0",
+            name="ck_classification_results_confidence_score",
+        ),
+        CheckConstraint(
+            "classifier_type IN ('llm', 'rule_based', 'hybrid')",
+            name="ck_classification_results_classifier_type",
+        ),
+        {"info": {"append_only": True}},
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    chunk_id = Column(
+        String(36),
+        ForeignKey(
+            "chunks.id",
+            ondelete="RESTRICT",
+            name="fk_classification_results_chunk_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    document_version_id = Column(
+        String(36),
+        ForeignKey(
+            "document_versions.id",
+            ondelete="RESTRICT",
+            name="fk_classification_results_document_version_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    case_id = Column(
+        String(36),
+        ForeignKey(
+            "cases.id",
+            ondelete="RESTRICT",
+            name="fk_classification_results_case_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    criteria_id = Column(
+        String(36),
+        ForeignKey(
+            "criteria_reference.id",
+            ondelete="RESTRICT",
+            name="fk_classification_results_criteria_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    section_affinity_id = Column(
+        String(36),
+        ForeignKey(
+            "section_affinity_reference.id",
+            ondelete="RESTRICT",
+            name="fk_classification_results_section_affinity_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    confidence_score = Column(Float, nullable=False)
+    rationale = Column(Text, nullable=False)
+    model_name = Column(String(100), nullable=False)
+    model_version = Column(String(50), nullable=False)
+    classifier_type = Column(String(30), nullable=False)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class ClassificationFeedback(Base):
+    __tablename__ = "classification_feedback"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('confirmed', 'rejected', 'corrected')",
+            name="ck_classification_feedback_action",
+        ),
+        CheckConstraint(
+            "corrected_confidence_score IS NULL OR "
+            "(corrected_confidence_score >= 0.0 AND corrected_confidence_score <= 1.0)",
+            name="ck_classification_feedback_corrected_confidence_score",
+        ),
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    classification_result_id = Column(
+        String(36),
+        ForeignKey(
+            "classification_results.id",
+            ondelete="RESTRICT",
+            name="fk_classification_feedback_classification_result_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    case_id = Column(
+        String(36),
+        ForeignKey(
+            "cases.id",
+            ondelete="RESTRICT",
+            name="fk_classification_feedback_case_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    reviewer_id = Column(String(255), nullable=False)
+    action = Column(String(30), nullable=False)
+    corrected_criteria_id = Column(
+        String(36),
+        ForeignKey(
+            "criteria_reference.id",
+            name="fk_classification_feedback_corrected_criteria_id",
+        ),
+        nullable=True,
+    )
+    corrected_section_affinity_id = Column(
+        String(36),
+        ForeignKey(
+            "section_affinity_reference.id",
+            name="fk_classification_feedback_corrected_section_affinity_id",
+        ),
+        nullable=True,
+    )
+    corrected_confidence_score = Column(Float, nullable=True)
+    rationale = Column(Text, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class CoverageGap(Base):
+    __tablename__ = "coverage_gaps"
+    __table_args__ = (
+        UniqueConstraint(
+            "case_id",
+            "criteria_id",
+            name="uq_coverage_gaps_case_id_criteria_id",
+        ),
+        CheckConstraint(
+            "gap_status IN ('covered', 'insufficient', 'missing')",
+            name="ck_coverage_gaps_gap_status",
+        ),
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    case_id = Column(
+        String(36),
+        ForeignKey(
+            "cases.id",
+            ondelete="RESTRICT",
+            name="fk_coverage_gaps_case_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    criteria_id = Column(
+        String(36),
+        ForeignKey(
+            "criteria_reference.id",
+            ondelete="RESTRICT",
+            name="fk_coverage_gaps_criteria_id",
+        ),
+        nullable=False,
+    )
+    gap_status = Column(String(30), nullable=False)
+    chunk_count = Column(Integer, nullable=False, default=0, server_default="0")
+    evaluated_at = Column(
         DateTime,
         nullable=False,
         default=datetime.utcnow,
