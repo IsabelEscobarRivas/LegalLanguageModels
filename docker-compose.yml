@@ -2,21 +2,29 @@ version: '3.8'
 services:
   web:
     build: .
+    command: >
+      sh -c "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
     volumes:
       - .:/app
       - ./static:/app/static
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://postgres:password@db:5432/documents_db
       - AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - EMBEDDING_DIMENSIONS=1536
+      - CHUNK_SIZE=512
+      - CHUNK_OVERLAP=50
+      - MIN_CHUNK_SIZE=100
+      - JWT_SECRET=${JWT_SECRET:-}
   db:
-    image: postgres:13
+    image: pgvector/pgvector:pg13
     ports:
       - "5432:5432"
     environment:
@@ -25,5 +33,10 @@ services:
       - POSTGRES_DB=documents_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d documents_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 volumes:
   postgres_data:
