@@ -60,6 +60,7 @@ def _safe_default_classification() -> dict[str, Any]:
         "confidence": 0.0,
         "rationale": "Invalid model response",
         "section_affinity": "background",
+        "citation_text": None,
     }
 
 
@@ -74,9 +75,13 @@ Respond ONLY with valid JSON matching this exact schema:
   "supports": boolean,
   "confidence": float between 0.0 and 1.0,
   "rationale": "one or two sentence explanation",
-  "section_affinity": one of: "background", "experience", "expert_opinion", "achievements", "impact", "conclusion"
+  "section_affinity": one of: "background", "experience", "expert_opinion", "achievements", "impact", "conclusion",
+  "citation_text": "the single most probative sentence or phrase from the text that supports this criterion, or null if supports is false"
 }
-If the text does not support the criterion, set supports=false and confidence=0.0."""
+If the text does not support the criterion, set supports=false, confidence=0.0, and citation_text=null.
+citation_text must be an exact quote or very close paraphrase of a specific passage from the provided text.
+citation_text must never introduce facts not present in the provided text.
+citation_text must be null when supports is false."""
 
     user_prompt = f"""CRITERION: {criterion.label}
 DESCRIPTION: {criterion.description}
@@ -117,11 +122,18 @@ TEXT TO CLASSIFY:
         ):
             return _safe_default_classification()
 
+        citation_text = result.get("citation_text")
+        if citation_text is not None and not isinstance(citation_text, str):
+            citation_text = None
+        if citation_text is not None and not citation_text.strip():
+            citation_text = None
+
         return {
             "supports": supports,
             "confidence": confidence,
             "rationale": rationale,
             "section_affinity": section_affinity,
+            "citation_text": citation_text,
         }
     except Exception:
         logger.exception(
@@ -161,6 +173,7 @@ def _classification_rows_to_dicts(
             "section_affinity": section.code,
             "confidence_score": result.confidence_score,
             "rationale": result.rationale,
+            "citation_text": result.citation_text,
         }
         for result, criterion, section in rows
     ]
@@ -284,6 +297,7 @@ def classify_chunk(
                     model_name=CLASSIFICATION_MODEL,
                     model_version=CLASSIFICATION_MODEL_VERSION,
                     classifier_type="llm",
+                    citation_text=llm_result.get("citation_text"),
                 )
             )
             response_dicts.append(
@@ -294,6 +308,7 @@ def classify_chunk(
                     "section_affinity": section.code,
                     "confidence_score": llm_result["confidence"],
                     "rationale": llm_result["rationale"],
+                    "citation_text": llm_result.get("citation_text"),
                 }
             )
 
