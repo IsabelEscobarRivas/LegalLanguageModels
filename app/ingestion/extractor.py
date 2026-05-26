@@ -37,12 +37,29 @@ def extract_text(file_bytes: bytes, original_filename: str) -> ExtractionResult:
 
         if ext == "docx":
             return _extract_docx(file_bytes)
+        if ext == "txt":
+            return _extract_txt(file_bytes)
         if ext == "pdf":
             return _extract_pdf(file_bytes)
 
         return ExtractionResult(text="", method=None, status="skipped", page_count=None)
     except Exception:
         logger.exception("Unexpected error in extract_text")
+        return ExtractionResult(text="", method=None, status="failed", page_count=None)
+
+
+def _extract_txt(file_bytes: bytes) -> ExtractionResult:
+    try:
+        text = file_bytes.decode("utf-8", errors="replace").strip()
+        status = "completed" if text else "failed"
+        return ExtractionResult(
+            text=text,
+            method="txt" if status == "completed" else None,
+            status=status,
+            page_count=None,
+        )
+    except Exception:
+        logger.exception("txt extraction failed")
         return ExtractionResult(text="", method=None, status="failed", page_count=None)
 
 

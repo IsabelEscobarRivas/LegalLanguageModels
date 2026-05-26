@@ -144,7 +144,7 @@ class DocumentVersion(Base):
             name="uq_document_versions_document_id_version_number",
         ),
         CheckConstraint(
-            "extraction_method IN ('pypdf2', 'textract', 'ocr', 'docx')",
+            "extraction_method IN ('pypdf2', 'textract', 'ocr', 'docx', 'txt')",
             name="ck_document_versions_extraction_method",
         ),
         CheckConstraint(

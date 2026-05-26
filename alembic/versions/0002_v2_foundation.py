@@ -151,7 +151,7 @@ def upgrade() -> None:
             name="uq_document_versions_document_id_version_number",
         ),
         sa.CheckConstraint(
-            "extraction_method IN ('pypdf2', 'textract', 'ocr', 'docx')",
+            "extraction_method IN ('pypdf2', 'textract', 'ocr', 'docx', 'txt')",
             name="ck_document_versions_extraction_method",
         ),
         sa.CheckConstraint(
