@@ -15,6 +15,7 @@ ADRs record major architectural decisions, the rationale behind them, rejected a
 | [ADR-005](ADR-005-classification-as-evidence-routing.md) | Classification as Evidence Routing for Narrative Generation | Accepted | 2026-05-25 |
 | [ADR-006](ADR-006-paragraph-chunking-citation-extraction-visa-routing.md) | Paragraph-Level Chunking, Citation Extraction, and Visa-Type-Aware Section Affinity Routing | Accepted | 2026-05-26 |
 | [ADR-007](ADR-007-knowledge-base-parallel-rag-pipeline.md) | Knowledge Base as a Parallel RAG Pipeline for Rhetorical and Structural Style Guidance | Accepted | 2026-05-26 |
+| [ADR-008](ADR-008-taxonomy-aware-kb-retrieval.md) | Taxonomy-Aware Knowledge Base Retrieval | Accepted | 2026-05-26 |
 
 ## Conventions
 
