@@ -42,6 +42,8 @@ ALLOWED_EVENT_TYPES = {
     "embedding_failed",
     "classification_completed",
     "classification_failed",
+    "generation_completed",
+    "generation_failed",
 }
 
 

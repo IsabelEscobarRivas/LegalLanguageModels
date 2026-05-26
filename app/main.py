@@ -31,6 +31,7 @@ from app.api.events.router import router as events_router
 from app.classification.router import router as classification_router
 from app.core import models  # noqa: F401 - register models on Base.metadata
 from app.core.database import get_db
+from app.generation.router import router as generation_router
 from app.retrieval.router import router as retrieval_router
 
 
@@ -52,6 +53,7 @@ app.include_router(documents_router)
 app.include_router(retrieval_router)
 app.include_router(events_router)
 app.include_router(classification_router)
+app.include_router(generation_router)
 
 
 @app.get("/")
