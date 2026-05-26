@@ -169,6 +169,38 @@ def _generate_section(
                 db, case_id, version_id, section_code, visa_type
             )
 
+        if section_code != "conclusion" and not evidence_results:
+            logger.warning(
+                "No evidence for section %s in case %s — returning sentinel",
+                section_code,
+                case_id,
+            )
+            section_row = DraftSection(
+                draft_output_id=draft_output_id,
+                section_code=section_code,
+                content=(
+                    "INSUFFICIENT EVIDENCE: No classified evidence is available "
+                    "for this section. Additional documents are required."
+                ),
+                prompt_template_id=template.id,
+                model_name=template.model_name,
+                model_version=GENERATION_MODEL_VERSION,
+                tokens_used=0,
+            )
+            db.add(section_row)
+            db.commit()
+            db.refresh(section_row)
+            return {
+                "section_code": section_code,
+                "content": (
+                    "INSUFFICIENT EVIDENCE: No classified evidence is available "
+                    "for this section. Additional documents are required."
+                ),
+                "citations_used": 0,
+                "tokens_used": 0,
+                "traces": [],
+            }
+
         kb_guidance = get_kb_style_guidance(visa_type, section_code, "")
 
         evidence_items = _format_evidence_items(evidence_results)
@@ -294,8 +326,27 @@ def _fetch_section_evidence(
 
 def _format_evidence_items(evidence_results: list[dict]) -> list[str]:
     """Format evidence for prompt injection as numbered list strings."""
+    seen_citations = set()
+    deduped = []
+
+    for ev in evidence_results:
+        citation = ev.get("citation_text")
+        if not citation or citation.strip() == "See source document":
+            continue
+        if citation not in seen_citations:
+            seen_citations.add(citation)
+            deduped.append(ev)
+
+    if not deduped:
+        seen_docs = set()
+        for ev in evidence_results:
+            doc = ev.get("source_document", "unknown")
+            if doc not in seen_docs:
+                seen_docs.add(doc)
+                deduped.append(ev)
+
     items = []
-    for i, ev in enumerate(evidence_results):
+    for i, ev in enumerate(deduped):
         citation = ev.get("citation_text") or "See source document"
         source = ev.get("source_document", "unknown")
         confidence = ev.get("confidence_score", 0.0)
