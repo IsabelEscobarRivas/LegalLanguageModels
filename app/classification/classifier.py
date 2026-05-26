@@ -14,7 +14,7 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 import openai
 from sqlalchemy.orm import Session
@@ -142,6 +142,55 @@ TEXT TO CLASSIFY:
         return _safe_default_classification()
 
 
+def _resolve_section_affinity(
+    db: Session,
+    criteria_id: str,
+    visa_type: str,
+    llm_section_code: str,
+) -> Optional[str]:
+    """Returns section_affinity_id or None if unresolvable.
+
+    Priority:
+    1. Fetch default from criteria_section_affinity_defaults
+    2. If LLM code is valid and differs from default, use LLM override
+    3. If LLM code is invalid, use default
+    4. If no default, use LLM code directly
+    5. If neither resolves, return None
+    """
+    from app.core.models import CriteriaSectionAffinityDefault, SectionAffinityReference
+
+    default_row = (
+        db.query(CriteriaSectionAffinityDefault)
+        .filter(
+            CriteriaSectionAffinityDefault.criteria_id == criteria_id,
+            CriteriaSectionAffinityDefault.visa_type.in_([visa_type, "BOTH"]),
+        )
+        .order_by(CriteriaSectionAffinityDefault.priority.asc())
+        .first()
+    )
+
+    llm_section = (
+        db.query(SectionAffinityReference)
+        .filter(SectionAffinityReference.code == llm_section_code)
+        .first()
+    )
+
+    if default_row and llm_section and llm_section.id != default_row.section_affinity_id:
+        return llm_section.id
+    elif default_row:
+        return default_row.section_affinity_id
+    elif llm_section:
+        return llm_section.id
+    else:
+        logger.warning(
+            "Could not resolve section affinity for criteria_id=%s visa_type=%s llm_code=%s",
+            criteria_id,
+            visa_type,
+            llm_section_code,
+        )
+        return None
+
+
 def _classification_rows_to_dicts(
     db: Session, chunk_id: str
 ) -> list[dict[str, Any]]:
@@ -258,9 +307,8 @@ def classify_chunk(
             )
             return {"status": "failed", "reason": "missing_api_key"}
 
-        section_by_code = {
-            s.code: s
-            for s in db.query(SectionAffinityReference).all()
+        section_by_id = {
+            s.id: s for s in db.query(SectionAffinityReference).all()
         }
 
         result_objects: list[ClassificationResult] = []
@@ -273,14 +321,17 @@ def classify_chunk(
             if llm_result["confidence"] < CLASSIFICATION_CONFIDENCE_THRESHOLD:
                 continue
 
-            section = section_by_code.get(llm_result["section_affinity"])
+            section_affinity_id = _resolve_section_affinity(
+                db,
+                criterion.id,
+                visa_type,
+                llm_result["section_affinity"],
+            )
+            if section_affinity_id is None:
+                continue
+
+            section = section_by_id.get(section_affinity_id)
             if section is None:
-                logger.warning(
-                    "Unknown section_affinity %r for chunk %s criterion %s — skipping",
-                    llm_result["section_affinity"],
-                    chunk_id,
-                    criterion.code,
-                )
                 continue
 
             result_id = str(uuid.uuid4())
@@ -291,7 +342,7 @@ def classify_chunk(
                     document_version_id=version.id,
                     case_id=case_id,
                     criteria_id=criterion.id,
-                    section_affinity_id=section.id,
+                    section_affinity_id=section_affinity_id,
                     confidence_score=llm_result["confidence"],
                     rationale=llm_result["rationale"],
                     model_name=CLASSIFICATION_MODEL,
