@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", 512))
 CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", 50))
 MIN_CHUNK_SIZE = int(os.environ.get("MIN_CHUNK_SIZE", 100))
+PARAGRAPH_MIN_SIZE = int(os.environ.get("PARAGRAPH_MIN_SIZE", 50))
+PARAGRAPH_MAX_SIZE = int(os.environ.get("PARAGRAPH_MAX_SIZE", 2000))
 CHUNK_STRATEGY = "fixed_size"
 CHUNK_STRATEGY_VERSION = "1.0"
 
@@ -89,11 +91,83 @@ def chunk_text(text: str) -> list[dict]:
     return chunks
 
 
+def chunk_text_paragraph(text: str) -> list[dict]:
+    """Split text at paragraph boundaries.
+
+    Rules:
+    - Split on double newline (\\n\\n) or single newline followed by whitespace
+    - Merge any paragraph below PARAGRAPH_MIN_SIZE into the preceding paragraph
+    - Split any paragraph above PARAGRAPH_MAX_SIZE at the nearest sentence
+      boundary ('. ', '? ', '! ') before the max size limit
+    - Returns list of {text, char_start, char_end, chunk_index}
+    - Deterministic — same input always produces same output
+    - Never raises — returns empty list if text is empty or whitespace only
+    """
+    if not text or not text.strip():
+        return []
+
+    # Split on paragraph boundaries
+    import re
+    raw_paragraphs = re.split(r'\n\n+|\n(?=\s)', text)
+    paragraphs = [p.strip() for p in raw_paragraphs if p.strip()]
+
+    if not paragraphs:
+        return []
+
+    # Merge short paragraphs into preceding
+    merged = []
+    for para in paragraphs:
+        if merged and len(para) < PARAGRAPH_MIN_SIZE:
+            merged[-1] = merged[-1] + ' ' + para
+        else:
+            merged.append(para)
+
+    # Split oversized paragraphs at sentence boundaries
+    final_paragraphs = []
+    for para in merged:
+        if len(para) <= PARAGRAPH_MAX_SIZE:
+            final_paragraphs.append(para)
+        else:
+            # Split at sentence boundary before max size
+            remaining = para
+            while len(remaining) > PARAGRAPH_MAX_SIZE:
+                split_at = PARAGRAPH_MAX_SIZE
+                for punct in ['. ', '? ', '! ']:
+                    idx = remaining.rfind(punct, 0, PARAGRAPH_MAX_SIZE)
+                    if idx != -1 and idx > split_at // 2:
+                        split_at = idx + len(punct)
+                        break
+                final_paragraphs.append(remaining[:split_at].strip())
+                remaining = remaining[split_at:].strip()
+            if remaining:
+                final_paragraphs.append(remaining)
+
+    # Build result with char offsets
+    results = []
+    pos = 0
+    for idx, para in enumerate(final_paragraphs):
+        # Find actual position in original text
+        start = text.find(para, pos)
+        if start == -1:
+            start = pos
+        end = start + len(para)
+        results.append({
+            'text': para,
+            'char_start': start,
+            'char_end': end,
+            'chunk_index': idx,
+        })
+        pos = end
+
+    return results
+
+
 def chunk_document_version(
     db: Session,
     case_id: str,
     document_id: str,
     version_id: str,
+    strategy: str = 'fixed_size',
 ) -> dict:
     """Chunk a DocumentVersion's extracted text and persist as Chunk rows.
 
@@ -126,13 +200,20 @@ def chunk_document_version(
         if version is None:
             return {"status": "not_found"}
 
+        if strategy == 'paragraph':
+            strategy_version = '1.0'
+            chunk_strategy = 'paragraph'
+        else:
+            strategy_version = CHUNK_STRATEGY_VERSION
+            chunk_strategy = CHUNK_STRATEGY
+
         # 2. Idempotency — same strategy+version already produced chunks.
         existing_count = (
             db.query(func.count(Chunk.id))
             .filter(
                 Chunk.document_version_id == version_id,
-                Chunk.chunk_strategy == CHUNK_STRATEGY,
-                Chunk.chunk_strategy_version == CHUNK_STRATEGY_VERSION,
+                Chunk.chunk_strategy == chunk_strategy,
+                Chunk.chunk_strategy_version == strategy_version,
             )
             .scalar()
         ) or 0
@@ -191,7 +272,10 @@ def chunk_document_version(
             return {"status": "failed", "reason": "empty_text"}
 
         # 5. Split.
-        pieces = chunk_text(text)
+        if strategy == 'paragraph':
+            pieces = chunk_text_paragraph(text)
+        else:
+            pieces = chunk_text(text)
         chunks_created = len(pieces)
 
         chunk_objects = [
@@ -202,8 +286,8 @@ def chunk_document_version(
                 text=p["text"],
                 char_start=p["char_start"],
                 char_end=p["char_end"],
-                chunk_strategy=CHUNK_STRATEGY,
-                chunk_strategy_version=CHUNK_STRATEGY_VERSION,
+                chunk_strategy=chunk_strategy,
+                chunk_strategy_version=strategy_version,
             )
             for p in pieces
         ]
@@ -221,8 +305,8 @@ def chunk_document_version(
             status="completed",
             detail={
                 "chunks_created": chunks_created,
-                "chunk_strategy": CHUNK_STRATEGY,
-                "chunk_strategy_version": CHUNK_STRATEGY_VERSION,
+                "chunk_strategy": chunk_strategy,
+                "chunk_strategy_version": strategy_version,
             },
         )
         db.add(event)
@@ -238,8 +322,8 @@ def chunk_document_version(
             "status": "ok",
             "version_id": version_id,
             "chunks_created": chunks_created,
-            "chunk_strategy": CHUNK_STRATEGY,
-            "chunk_strategy_version": CHUNK_STRATEGY_VERSION,
+            "chunk_strategy": chunk_strategy,
+            "chunk_strategy_version": strategy_version,
         }
 
     except Exception as exc:

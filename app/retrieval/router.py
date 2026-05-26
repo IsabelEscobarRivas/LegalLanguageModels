@@ -15,7 +15,7 @@ import logging
 import os
 
 import openai
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -51,10 +51,16 @@ def trigger_chunking(
     case_id: str = Depends(require_case_access),
     document_id: str,
     version_id: str,
+    strategy: str = Query(default='fixed_size'),
     db: Session = Depends(get_db),
 ):
     """Trigger chunking for a DocumentVersion. Idempotent on (strategy, version)."""
-    result = chunk_document_version(db, case_id, document_id, version_id)
+    if strategy not in ('fixed_size', 'paragraph'):
+        raise HTTPException(status_code=422, detail="Invalid strategy")
+
+    result = chunk_document_version(
+        db, case_id, document_id, version_id, strategy=strategy
+    )
     status_val = result["status"]
 
     if status_val == "ok":

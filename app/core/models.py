@@ -5,6 +5,8 @@ Mirrors the cumulative state after Alembic revisions:
   * 0003_v2_retrieval   — chunks fields, embeddings, retrieval_logs
   * 0004_min_similarity — retrieval_logs.min_similarity
   * 0005_classification_schema — criteria/section reference, classification, coverage
+  * 0006_add_txt_extraction_method — document_versions extraction_method txt
+  * 0007_sprint4_schema — citation_text, affinity defaults, generation tables
 
 UUID primary keys are stored as String(36) for cross-DB compatibility.
 """
@@ -450,6 +452,7 @@ class ClassificationResult(Base):
     model_name = Column(String(100), nullable=False)
     model_version = Column(String(50), nullable=False)
     classifier_type = Column(String(30), nullable=False)
+    citation_text = Column(Text, nullable=True)
     created_at = Column(
         DateTime,
         nullable=False,
@@ -558,6 +561,212 @@ class CoverageGap(Base):
     gap_status = Column(String(30), nullable=False)
     chunk_count = Column(Integer, nullable=False, default=0, server_default="0")
     evaluated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class CriteriaSectionAffinityDefault(Base):
+    __tablename__ = "criteria_section_affinity_defaults"
+    __table_args__ = (
+        UniqueConstraint(
+            "criteria_id",
+            "section_affinity_id",
+            "visa_type",
+            name="uq_criteria_section_affinity_defaults_criteria_section_visa",
+        ),
+        CheckConstraint(
+            "visa_type IN ('EB1', 'EB2', 'BOTH')",
+            name="ck_criteria_section_affinity_defaults_visa_type",
+        ),
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    criteria_id = Column(
+        String(36),
+        ForeignKey(
+            "criteria_reference.id",
+            ondelete="RESTRICT",
+            name="fk_criteria_section_affinity_defaults_criteria_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    section_affinity_id = Column(
+        String(36),
+        ForeignKey(
+            "section_affinity_reference.id",
+            ondelete="RESTRICT",
+            name="fk_criteria_section_affinity_defaults_section_affinity_id",
+        ),
+        nullable=False,
+    )
+    visa_type = Column(String(20), nullable=False)
+    priority = Column(Integer, nullable=False, default=1, server_default="1")
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class PromptTemplate(Base):
+    __tablename__ = "prompt_templates"
+    __table_args__ = (
+        UniqueConstraint(
+            "visa_type",
+            "section_code",
+            "version",
+            name="uq_prompt_templates_visa_type_section_code_version",
+        ),
+        CheckConstraint(
+            "visa_type IN ('EB1', 'EB2', 'BOTH')",
+            name="ck_prompt_templates_visa_type",
+        ),
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    visa_type = Column(String(20), nullable=False, index=True)
+    section_code = Column(String(50), nullable=False, index=True)
+    version = Column(Integer, nullable=False, default=1, server_default="1")
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true", index=True)
+    system_prompt = Column(Text, nullable=False)
+    user_prompt = Column(Text, nullable=False)
+    examples = Column(Text, nullable=True)
+    model_name = Column(String(100), nullable=False, default="gpt-4o", server_default="gpt-4o")
+    max_tokens = Column(Integer, nullable=False, default=1000, server_default="1000")
+    temperature = Column(Float, nullable=False, default=0.3, server_default="0.3")
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class DraftOutput(Base):
+    __tablename__ = "draft_outputs"
+    __table_args__ = (
+        CheckConstraint(
+            "visa_type IN ('EB1', 'EB2')",
+            name="ck_draft_outputs_visa_type",
+        ),
+        CheckConstraint(
+            "overall_status IN ('complete', 'incomplete', 'coverage_override')",
+            name="ck_draft_outputs_overall_status",
+        ),
+        {"info": {"append_only": True}},
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    case_id = Column(
+        String(36),
+        ForeignKey(
+            "cases.id",
+            ondelete="RESTRICT",
+            name="fk_draft_outputs_case_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    visa_type = Column(String(20), nullable=False)
+    document_version_id = Column(
+        String(36),
+        ForeignKey(
+            "document_versions.id",
+            ondelete="RESTRICT",
+            name="fk_draft_outputs_document_version_id",
+        ),
+        nullable=False,
+    )
+    overall_status = Column(String(30), nullable=False)
+    coverage_summary = Column(JSONB, nullable=False)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class DraftSection(Base):
+    __tablename__ = "draft_sections"
+    __table_args__ = ({"info": {"append_only": True}},)
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    draft_output_id = Column(
+        String(36),
+        ForeignKey(
+            "draft_outputs.id",
+            ondelete="RESTRICT",
+            name="fk_draft_sections_draft_output_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    section_code = Column(String(50), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    prompt_template_id = Column(
+        String(36),
+        ForeignKey(
+            "prompt_templates.id",
+            ondelete="RESTRICT",
+            name="fk_draft_sections_prompt_template_id",
+        ),
+        nullable=False,
+    )
+    model_name = Column(String(100), nullable=False)
+    model_version = Column(String(50), nullable=False)
+    tokens_used = Column(Integer, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class GenerationTrace(Base):
+    __tablename__ = "generation_traces"
+    __table_args__ = ({"info": {"append_only": True}},)
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    draft_section_id = Column(
+        String(36),
+        ForeignKey(
+            "draft_sections.id",
+            ondelete="RESTRICT",
+            name="fk_generation_traces_draft_section_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    chunk_id = Column(
+        String(36),
+        ForeignKey(
+            "chunks.id",
+            ondelete="RESTRICT",
+            name="fk_generation_traces_chunk_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    classification_result_id = Column(
+        String(36),
+        ForeignKey(
+            "classification_results.id",
+            ondelete="RESTRICT",
+            name="fk_generation_traces_classification_result_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    citation_text = Column(Text, nullable=True)
+    similarity_score = Column(Float, nullable=True)
+    created_at = Column(
         DateTime,
         nullable=False,
         default=datetime.utcnow,
