@@ -255,6 +255,15 @@ def get_active_template(db, visa_type, section_code):
     ).first()
 ```
 
+If examples is non-null, inject into prompt as:
+
+Example of a strong {section_name} section:
+---
+{examples}
+---
+
+Inject this block immediately before the Evidence: block in the user_prompt.
+
 If no template found for specific visa_type, fall back to `BOTH`. If still none found, raise 503 — generation cannot proceed without a prompt template.
 
 ---

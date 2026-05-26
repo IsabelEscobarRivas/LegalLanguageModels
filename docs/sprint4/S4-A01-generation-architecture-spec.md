@@ -16,6 +16,7 @@ CREATE TABLE prompt_templates (
   model_name      VARCHAR(100)  NOT NULL DEFAULT 'gpt-4o',
   max_tokens      INTEGER       NOT NULL DEFAULT 1000,
   temperature     FLOAT         NOT NULL DEFAULT 0.3,
+  examples          TEXT          NULL,
   created_at      TIMESTAMP     NOT NULL DEFAULT NOW(),
   UNIQUE (visa_type, section_code, version)
 );
@@ -187,6 +188,7 @@ Every section prompt receives these variables:
             "source_document": "Felipe_Cusnir_PP.pdf"
         }
     ],
+    "examples": "Mr. Cusnir's decade of progressive experience...\n\n[second example paragraph]",  # nullable
     "section_instruction": "Write 2-3 paragraphs..."
 }
 ```
