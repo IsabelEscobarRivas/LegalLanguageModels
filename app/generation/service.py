@@ -63,17 +63,12 @@ def generate_draft(
     Never raises.
     """
     try:
-        version = (
-            db.query(DocumentVersion)
-            .join(Document, Document.id == DocumentVersion.document_id)
-            .filter(
-                DocumentVersion.id == version_id,
-                Document.id == document_id,
-                Document.case_id == case_id,
-            )
+        document = (
+            db.query(Document)
+            .filter(Document.id == document_id, Document.case_id == case_id)
             .first()
         )
-        if version is None:
+        if document is None:
             return {"status": "not_found"}
 
         gate = check_coverage_gate(db, case_id, visa_type, force_generate)
@@ -166,7 +161,7 @@ def _generate_section(
             evidence_results: list[dict] = []
         else:
             evidence_results = _fetch_section_evidence(
-                db, case_id, version_id, section_code, visa_type
+                db, case_id, section_code, visa_type
             )
 
         if section_code != "conclusion" and not evidence_results:
@@ -269,7 +264,6 @@ def _generate_section(
 def _fetch_section_evidence(
     db: Session,
     case_id: str,
-    version_id: str,
     section_code: str,
     visa_type: str,
 ) -> list[dict]:
@@ -301,7 +295,6 @@ def _fetch_section_evidence(
         .join(Document, Document.id == DocumentVersion.document_id)
         .filter(
             ClassificationResult.case_id == case_id,
-            ClassificationResult.document_version_id == version_id,
             SectionAffinityReference.code == section_code,
         )
         .order_by(ClassificationResult.confidence_score.desc())

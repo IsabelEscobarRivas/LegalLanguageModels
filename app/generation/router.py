@@ -5,7 +5,7 @@ GET  /cases/{case_id}/drafts
 GET  /cases/{case_id}/drafts/{draft_id}
 """
 import logging
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import require_case_access
 from app.core.database import get_db
-from app.core.models import DraftOutput, DraftSection, GenerationTrace
+from app.core.models import DocumentVersion, DraftOutput, DraftSection, GenerationTrace
 from app.generation.service import generate_draft
 
 
@@ -24,7 +24,7 @@ router = APIRouter(tags=["generation"])
 
 class GenerateRequest(BaseModel):
     document_id: str
-    version_id: str
+    version_id: Optional[str] = None
     visa_type: Literal["EB1", "EB2"]
     force_generate: bool = False
 
@@ -37,11 +37,25 @@ def generate_draft_endpoint(
     db: Session = Depends(get_db),
 ):
     """Generate a section-based legal draft for a case."""
+    if body.version_id is None:
+        latest = (
+            db.query(DocumentVersion)
+            .filter(DocumentVersion.document_id == body.document_id)
+            .order_by(DocumentVersion.version_number.desc())
+            .first()
+        )
+        version_id = latest.id if latest else None
+    else:
+        version_id = body.version_id
+
+    if version_id is None:
+        raise HTTPException(status_code=404, detail="Document version not found")
+
     result = generate_draft(
         db,
         case_id,
         body.document_id,
-        body.version_id,
+        version_id,
         body.visa_type,
         body.force_generate,
     )
