@@ -100,14 +100,14 @@ def get_kb_style_guidance(
     evidence_summary: str,
     db: Optional[Session] = None,
     firm_id: Optional[str] = None,
-) -> Optional[str]:
+) -> tuple[Optional[str], list[str]]:
     """Retrieve firm-scoped KB style guidance for a draft section.
 
-    When db or firm_id is omitted, returns None so existing callers remain
-    unchanged until Phase 4 wires generation context.
+    Returns (guidance_string, kb_chunk_ids). When db or firm_id is omitted,
+    returns (None, []).
     """
     if db is None or firm_id is None:
-        return None
+        return (None, [])
 
     allowed_types_by_section = {
         "background": ["style_guide", "firm_convention"],
@@ -119,12 +119,12 @@ def get_kb_style_guidance(
     }
     allowed_types = allowed_types_by_section.get(section_code)
     if not allowed_types:
-        return None
+        return (None, [])
 
     try:
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            return None
+            return (None, [])
         client = openai.OpenAI(api_key=api_key)
         response = client.embeddings.create(
             input=evidence_summary,
@@ -136,13 +136,13 @@ def get_kb_style_guidance(
         logger.exception(
             "KB style guidance embedding failed for section %s", section_code
         )
-        return None
+        return (None, [])
 
     try:
         rows = db.execute(
             text(
                 """
-                SELECT kc.text, kc.chunk_index
+                SELECT kc.id, kc.text, kc.chunk_index
                 FROM kb_chunks kc
                 JOIN kb_embeddings ke ON ke.kb_chunk_id = kc.id
                 WHERE kc.firm_id = :firm_id
@@ -167,11 +167,13 @@ def get_kb_style_guidance(
         logger.exception(
             "KB style guidance retrieval failed for section %s", section_code
         )
-        return None
+        return (None, [])
 
     if not rows:
-        return None
+        return (None, [])
 
-    return "\n\n".join(
-        f"Style guidance ({row[1]}): {row[0]}" for row in rows
+    chunk_ids = [row[0] for row in rows]
+    guidance = "\n\n".join(
+        f"Style guidance ({row[2]}): {row[1]}" for row in rows
     )
+    return (guidance, chunk_ids)

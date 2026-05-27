@@ -14,6 +14,7 @@ from app.core.models import (
     DocumentVersion,
     DraftOutput,
     DraftSection,
+    KBGuidanceTrace,
     SectionAffinityReference,
 )
 from app.generation.coverage_gate import check_coverage_gate
@@ -71,6 +72,10 @@ def generate_draft(
         if document is None:
             return {"status": "not_found"}
 
+        firm_id = document.case.firm_id if document.case else None
+        if firm_id is None:
+            return {"status": "failed", "reason": "firm_id_not_resolved"}
+
         gate = check_coverage_gate(db, case_id, visa_type, force_generate)
         if not gate["allowed"]:
             return {
@@ -106,6 +111,7 @@ def generate_draft(
                 version_id=version_id,
                 visa_type=visa_type,
                 section_code=section_code,
+                firm_id=firm_id,
                 coverage_summary=draft.coverage_summary,
                 prior_sections=sections_so_far,
             )
@@ -143,6 +149,7 @@ def _generate_section(
     version_id: str,
     visa_type: str,
     section_code: str,
+    firm_id: str,
     coverage_summary: dict,
     prior_sections: list[dict],
 ) -> Optional[dict]:
@@ -196,7 +203,17 @@ def _generate_section(
                 "traces": [],
             }
 
-        kb_guidance = get_kb_style_guidance(visa_type, section_code, "")
+        evidence_summary = " ".join(
+            ev.get("citation_text", "") or ""
+            for ev in evidence_results
+        )
+        kb_guidance, kb_chunk_ids = get_kb_style_guidance(
+            visa_type,
+            section_code,
+            evidence_summary,
+            db=db,
+            firm_id=firm_id,
+        )
 
         evidence_items = _format_evidence_items(evidence_results)
         variables = {
@@ -233,6 +250,7 @@ def _generate_section(
             model_name=template.model_name,
             model_version=GENERATION_MODEL_VERSION,
             tokens_used=tokens_used,
+            kb_guidance_applied=kb_guidance is not None,
         )
         db.add(section_row)
         db.commit()
@@ -243,6 +261,19 @@ def _generate_section(
             draft_section_id=section_row.id,
             classification_results=evidence_results,
         )
+
+        if kb_guidance is not None and kb_chunk_ids:
+            kb_trace_rows = [
+                KBGuidanceTrace(
+                    draft_section_id=section_row.id,
+                    kb_chunk_id=chunk_id,
+                    firm_id=firm_id,
+                    guidance_type="style",
+                )
+                for chunk_id in kb_chunk_ids
+            ]
+            db.bulk_save_objects(kb_trace_rows)
+            db.commit()
 
         return {
             "section_code": section_code,
