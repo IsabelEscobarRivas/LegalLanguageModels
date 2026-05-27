@@ -26,6 +26,10 @@ class CaseResponse(BaseModel):
     created_at: datetime
 
 
+class CaseListResponse(BaseModel):
+    cases: list[CaseResponse]
+
+
 # ---------- Documents (list / detail / upload) ----------
 
 class DocumentSummary(BaseModel):

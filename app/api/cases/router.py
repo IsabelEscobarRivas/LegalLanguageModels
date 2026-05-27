@@ -1,6 +1,7 @@
 """Case-level endpoints.
 
 POST /cases
+GET  /cases
 GET  /cases/{case_id}/documents
 """
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,12 +15,28 @@ from app.core.models import Case, Document, DocumentVersion
 from app.core.schemas import (
     CaseCreate,
     CaseDocumentList,
+    CaseListResponse,
     CaseResponse,
     DocumentSummary,
 )
 
 
 router = APIRouter(tags=["cases"])
+
+
+@router.get("/cases", response_model=CaseListResponse)
+def list_cases(
+    *,
+    db: Session = Depends(get_db),
+    claims: TokenClaims = Depends(get_current_claims),
+) -> CaseListResponse:
+    cases = (
+        db.query(Case)
+        .filter(Case.firm_id == claims.firm_id)
+        .order_by(Case.created_at.desc())
+        .all()
+    )
+    return CaseListResponse(cases=cases)
 
 
 @router.post("/cases", response_model=CaseResponse, status_code=201)

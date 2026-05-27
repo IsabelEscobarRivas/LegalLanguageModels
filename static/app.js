@@ -950,6 +950,9 @@ function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
 }
 
 function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft, onBack }) {
+    const [existingCases, setExistingCases] = useState([]);
+    const [caseSearch, setCaseSearch] = useState('');
+    const [casesLoading, setCasesLoading] = useState(false);
     const [workflow, setWorkflow] = useState(null);
     const [documents, setDocuments] = useState([]);
     const [coverage, setCoverage] = useState(null);
@@ -978,6 +981,23 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
     }, [visaType]);
 
     const activeCaseId = caseId || localCaseId;
+
+    const loadCases = async function() {
+        if (!window.V2ApiService.getToken()) return;
+        setCasesLoading(true);
+        try {
+            const data = await window.V2ApiService.listCases();
+            setExistingCases(data.cases || []);
+        } catch (err) {
+            setMessage('Case retrieval failed: ' + err.message);
+        } finally {
+            setCasesLoading(false);
+        }
+    };
+
+    useEffect(function() {
+        loadCases();
+    }, []);
 
     const loadState = async function() {
         if (!activeCaseId) return;
@@ -1021,6 +1041,14 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
         }
         setCaseId(localCaseId.trim());
         setVisaType(localVisaType);
+        setMessage('');
+    };
+
+    const handleSelectCase = function(selectedCase) {
+        setCaseId(selectedCase.id);
+        setLocalCaseId(selectedCase.id);
+        setVisaType(selectedCase.visa_type);
+        setLocalVisaType(selectedCase.visa_type);
         setMessage('');
     };
 
@@ -1164,10 +1192,59 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
     };
 
     if (!activeCaseId) {
+        const filteredCases = existingCases.filter(function(existingCase) {
+            const needle = caseSearch.toLowerCase();
+            return (
+                existingCase.case_ref.toLowerCase().indexOf(needle) !== -1 ||
+                existingCase.id.toLowerCase().indexOf(needle) !== -1 ||
+                existingCase.visa_type.toLowerCase().indexOf(needle) !== -1
+            );
+        });
+
         return (
             <div className="max-w-5xl mx-auto p-6">
                 <h1 className="text-2xl font-bold text-[#1a365d] mb-6">Case Dashboard</h1>
                 <div className="bg-white rounded-lg shadow p-6 space-y-4">
+                    <div className="border-b pb-4">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                            <h2 className="text-lg font-semibold text-[#1a365d]">Existing Cases</h2>
+                            <button
+                                onClick={loadCases}
+                                className="bg-gray-200 px-3 py-1 rounded text-sm hover:bg-gray-300"
+                            >
+                                {casesLoading ? 'Loading...' : 'Refresh Cases'}
+                            </button>
+                        </div>
+                        <input
+                            type="text"
+                            value={caseSearch}
+                            onChange={function(e) { setCaseSearch(e.target.value); }}
+                            className="w-full p-2 border rounded mb-3"
+                            placeholder="Search by case reference, visa type, or case ID"
+                        />
+                        {filteredCases.length === 0 ? (
+                            <p className="text-sm text-gray-500">
+                                {casesLoading ? 'Loading cases...' : 'No existing cases found for this firm.'}
+                            </p>
+                        ) : (
+                            <div className="max-h-72 overflow-auto border rounded">
+                                {filteredCases.map(function(existingCase) {
+                                    return (
+                                        <button
+                                            key={existingCase.id}
+                                            onClick={function() { handleSelectCase(existingCase); }}
+                                            className="w-full text-left p-3 border-b last:border-0 hover:bg-blue-50"
+                                        >
+                                            <span className="font-medium text-gray-900">{existingCase.case_ref}</span>
+                                            <span className="ml-2 text-xs px-2 py-1 rounded bg-gray-100 text-gray-700">{existingCase.visa_type}</span>
+                                            <span className="ml-2 text-xs px-2 py-1 rounded bg-green-50 text-green-700">{existingCase.status}</span>
+                                            <span className="block text-xs text-gray-500 mt-1">{existingCase.id}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Case ID</label>
                         <input

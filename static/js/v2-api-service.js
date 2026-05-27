@@ -116,6 +116,14 @@
         getToken,
         mapV1toV2,
 
+        listCases: async function() {
+            const response = await window.fetch(
+                '/cases',
+                { headers: authHeaders() }
+            );
+            return parseJsonResponse(response);
+        },
+
         createCase: async function(body) {
             const response = await window.fetch(
                 '/cases',
