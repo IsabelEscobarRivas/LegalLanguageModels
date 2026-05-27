@@ -235,6 +235,14 @@ def upgrade() -> None:
     )
 
 
+# NOTE: downgrade() is only safe on databases with no draft_sections rows
+# referencing these template IDs. On any populated QA or production database,
+# downgrade will fail with FK violation on fk_draft_sections_prompt_template_id.
+# This is correct behavior — draft provenance must not be orphaned.
+# Safe downgrade path: truncate draft_sections and draft_outputs first,
+# or restore from a DB snapshot. Do not attempt downgrade on live data.
+
+
 def downgrade() -> None:
     conn = op.get_bind()
     conn.execute(
