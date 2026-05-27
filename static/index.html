@@ -15,7 +15,15 @@
     <div id="root"></div>
     <script type="text/babel" src="/static/app.js"></script>
     <script type="text/babel">
-        ReactDOM.render(<AttorneyWorkflowApp />, document.getElementById('root'));
+        (function renderAttorneyWorkflowApp() {
+            if (!window.AttorneyWorkflowApp) {
+                window.setTimeout(renderAttorneyWorkflowApp, 10);
+                return;
+            }
+
+            const AttorneyWorkflowApp = window.AttorneyWorkflowApp;
+            ReactDOM.render(<AttorneyWorkflowApp />, document.getElementById('root'));
+        })();
     </script>
 </body>
 </html>
