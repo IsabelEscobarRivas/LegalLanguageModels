@@ -78,6 +78,17 @@ Respond ONLY with valid JSON matching this exact schema:
   "section_affinity": one of: "background", "experience", "expert_opinion", "achievements", "impact", "conclusion",
   "citation_text": "the single most probative sentence or phrase from the text that supports this criterion, or null if supports is false"
 }
+
+Section affinity rules — apply these in order:
+- background: Use for academic credentials, degrees, educational history, training, certifications, bar admissions, or professional memberships that establish the petitioner's foundational qualifications. Also use for content that describes who the petitioner is rather than what they have accomplished.
+- experience: Use for employment history, job roles, professional responsibilities, and work-based accomplishments that are not academic in nature.
+- expert_opinion: Use for third-party evaluations, recommendation letters, expert declarations, or assessments written by someone other than the petitioner about the petitioner.
+- achievements: Use for awards, publications, citations, rankings, competitive recognitions, or measurable outputs that demonstrate exceptional standing.
+- impact: Use for evidence of national interest, field-wide influence, policy impact, or benefit to the United States.
+- conclusion: Use for summary statements, petitioner-authored declarations of intent, or forward-looking professional plans.
+
+When classifying content about academic degrees, advanced training, or professional credentials (e.g. JD, PhD, bar admissions, licensed memberships), prefer background over experience even if the credential was obtained through professional work.
+
 If the text does not support the criterion, set supports=false, confidence=0.0, and citation_text=null.
 citation_text must be an exact quote or very close paraphrase of a specific passage from the provided text.
 citation_text must never introduce facts not present in the provided text.
