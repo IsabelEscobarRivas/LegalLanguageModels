@@ -41,6 +41,27 @@
         Object.values(AUTH_KEYS).forEach(key => localStorage.removeItem(key));
     }
 
+    function getToken() {
+        return getAuthState().token;
+    }
+
+    function authHeaders(extra) {
+        extra = extra || {};
+        const token = getToken();
+        const headers = Object.assign({}, extra);
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+        return headers;
+    }
+
+    async function parseJsonResponse(response) {
+        const data = await response.json();
+        if (!response.ok) {
+            const detail = data.detail || data.message || response.statusText;
+            throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+        }
+        return data;
+    }
+
     // --- Endpoint Mapper ---
     function mapV1toV2(url) {
         for (const [pattern, replacement] of V1_TO_V2_ENDPOINTS) {
@@ -102,6 +123,123 @@
         setAuthState,
         getAuthState,
         clearAuthState,
+        getToken,
         mapV1toV2,
+
+        // Review endpoints
+        submitReview: async function(caseId, draftId, sectionId, body) {
+            const response = await window.fetch(
+                '/cases/' + caseId + '/drafts/' + draftId + '/sections/' + sectionId + '/review',
+                {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body),
+                }
+            );
+            return parseJsonResponse(response);
+        },
+
+        getReviewStatus: async function(caseId, draftId) {
+            const response = await window.fetch(
+                '/cases/' + caseId + '/drafts/' + draftId + '/review-status',
+                { headers: authHeaders() }
+            );
+            return parseJsonResponse(response);
+        },
+
+        regenerateSection: async function(caseId, draftId, sectionId, body) {
+            const response = await window.fetch(
+                '/cases/' + caseId + '/drafts/' + draftId + '/sections/' + sectionId + '/regenerate',
+                {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body),
+                }
+            );
+            return parseJsonResponse(response);
+        },
+
+        exportDraft: async function(caseId, draftId, format) {
+            const response = await window.fetch(
+                '/cases/' + caseId + '/drafts/' + draftId + '/export',
+                {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ export_format: format }),
+                }
+            );
+            return parseJsonResponse(response);
+        },
+
+        getExports: async function(caseId, draftId) {
+            const response = await window.fetch(
+                '/cases/' + caseId + '/drafts/' + draftId + '/exports',
+                { headers: authHeaders() }
+            );
+            return parseJsonResponse(response);
+        },
+
+        // Observability
+        getWorkflowState: async function(caseId) {
+            const response = await window.fetch(
+                '/observability/workflow/' + caseId,
+                { headers: authHeaders() }
+            );
+            return parseJsonResponse(response);
+        },
+
+        getInvariants: async function() {
+            const response = await window.fetch(
+                '/observability/invariants',
+                { headers: authHeaders() }
+            );
+            return parseJsonResponse(response);
+        },
+
+        getQueueHealth: async function() {
+            const response = await window.fetch(
+                '/observability/queue-health',
+                { headers: authHeaders() }
+            );
+            return parseJsonResponse(response);
+        },
+
+        // KB
+        ingestKBDocument: async function(kbDocumentId) {
+            const response = await window.fetch(
+                '/kb/documents/' + kbDocumentId + '/ingest',
+                { method: 'POST', headers: authHeaders() }
+            );
+            return parseJsonResponse(response);
+        },
+
+        // Draft
+        getDraft: async function(caseId, draftId) {
+            const response = await window.fetch(
+                '/cases/' + caseId + '/drafts/' + draftId,
+                { headers: authHeaders() }
+            );
+            return parseJsonResponse(response);
+        },
+
+        listDrafts: async function(caseId) {
+            const response = await window.fetch(
+                '/cases/' + caseId + '/drafts',
+                { headers: authHeaders() }
+            );
+            return parseJsonResponse(response);
+        },
+
+        generateDraft: async function(caseId, body) {
+            const response = await window.fetch(
+                '/cases/' + caseId + '/generate',
+                {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body),
+                }
+            );
+            return parseJsonResponse(response);
+        },
     };
 })(); 

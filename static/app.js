@@ -1,8 +1,6 @@
 const { useState, useRef, useEffect } = React;
 
-const DocumentIngestion = () => {
-    const [caseId, setCaseId] = useState('');
-    const [visaType, setVisaType] = useState('');
+const DocumentIngestion = ({ caseId, setCaseId, visaType, setVisaType }) => {
     const [category, setCategory] = useState('');
     const [selectedFile, setSelectedFile] = useState(null);
     const [uploadStatus, setUploadStatus] = useState('');
@@ -553,4 +551,623 @@ const DocumentIngestion = () => {
     );
 };
 
-ReactDOM.render(<DocumentIngestion />, document.getElementById("root"));
+const SECTION_ORDER = [
+    'background',
+    'experience',
+    'expert_opinion',
+    'achievements',
+    'impact',
+    'conclusion',
+];
+
+const SECTION_LABELS = {
+    background: 'Background',
+    experience: 'Experience',
+    expert_opinion: 'Expert Opinion',
+    achievements: 'Achievements',
+    impact: 'Impact',
+    conclusion: 'Conclusion',
+};
+
+function formatSectionCode(code) {
+    return SECTION_LABELS[code] || code.replace(/_/g, ' ').replace(/\b\w/g, function(c) {
+        return c.toUpperCase();
+    });
+}
+
+function lifecycleBadgeClass(state) {
+    if (state === 'failed') return 'bg-red-100 text-red-800';
+    if (state === 'indexed' || state === 'final' || state === 'reviewed') return 'bg-green-100 text-green-800';
+    if (state === 'chunked' || state === 'embedded') return 'bg-yellow-100 text-yellow-800';
+    return 'bg-gray-100 text-gray-800';
+}
+
+function reviewBadgeClass(action) {
+    if (action === 'approved') return 'bg-green-100 text-green-800';
+    if (action === 'edited') return 'bg-blue-100 text-blue-800';
+    if (action === 'rejected') return 'bg-red-100 text-red-800';
+    return 'bg-gray-100 text-gray-600';
+}
+
+function ProvenanceInspector({ section, traces, kbGuidanceApplied, kbTraceCount }) {
+    return (
+        <div className="mt-4 space-y-3">
+            <div className="border-2 border-blue-400 rounded-lg p-4 bg-blue-50">
+                <h4 className="font-semibold text-blue-900 mb-3">Evidence Traces</h4>
+                {traces && traces.length > 0 ? traces.map(function(trace, idx) {
+                    return (
+                        <div key={trace.classification_result_id || idx} className="mb-3 pb-3 border-b border-blue-200 last:border-0">
+                            <p className="text-sm italic text-gray-800">
+                                &ldquo;{trace.citation_text || 'See source document'}&rdquo;
+                            </p>
+                            <p className="text-xs text-gray-600 mt-1">
+                                Source: {trace.source_document || '—'}
+                            </p>
+                            <p className="text-xs text-gray-600">
+                                Criteria: {trace.criteria_code || '—'}
+                                {trace.confidence_score != null && (
+                                    <span> · Confidence: {Math.round(trace.confidence_score * 100)}%</span>
+                                )}
+                            </p>
+                        </div>
+                    );
+                }) : (
+                    <p className="text-sm text-gray-600">No evidence traces for this section.</p>
+                )}
+            </div>
+            {kbGuidanceApplied && (
+                <div className="border-2 border-purple-400 rounded-lg p-4 bg-purple-50">
+                    <h4 className="font-semibold text-purple-900">KB Style Guidance Applied</h4>
+                    <p className="text-sm text-purple-800 mt-1">
+                        Guidance influences rhetoric only — not cited as evidence
+                    </p>
+                    {kbTraceCount != null && (
+                        <p className="text-xs text-purple-700 mt-2">
+                            {kbTraceCount} KB guidance trace{kbTraceCount === 1 ? '' : 's'} recorded
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
+    const [draft, setDraft] = useState(null);
+    const [reviewStatus, setReviewStatus] = useState(null);
+    const [exportHistory, setExportHistory] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [openProvenance, setOpenProvenance] = useState(null);
+    const [editingSection, setEditingSection] = useState(null);
+    const [editText, setEditText] = useState('');
+    const [actionMessage, setActionMessage] = useState('');
+
+    const loadAll = async function() {
+        setLoading(true);
+        setError('');
+        try {
+            const draftData = await window.V2ApiService.getDraft(caseId, draftId);
+            const statusData = await window.V2ApiService.getReviewStatus(caseId, draftId);
+            const exportData = await window.V2ApiService.getExports(caseId, draftId);
+            setDraft(draftData);
+            setReviewStatus(statusData);
+            setExportHistory(exportData.exports || []);
+        } catch (err) {
+            setError(err.message || 'Failed to load draft');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(function() {
+        loadAll();
+    }, [caseId, draftId]);
+
+    const reviewBySectionId = {};
+    if (reviewStatus && reviewStatus.sections) {
+        reviewStatus.sections.forEach(function(s) {
+            reviewBySectionId[s.section_id] = s;
+        });
+    }
+
+    const sectionsByCode = {};
+    if (draft && draft.sections) {
+        draft.sections.forEach(function(s) {
+            sectionsByCode[s.section_code] = s;
+        });
+    }
+
+    const orderedSections = SECTION_ORDER.map(function(code) {
+        return sectionsByCode[code];
+    }).filter(Boolean);
+
+    const handleApprove = async function(sectionId) {
+        try {
+            await window.V2ApiService.submitReview(caseId, draftId, sectionId, { action: 'approved' });
+            setActionMessage('Section approved.');
+            await loadAll();
+        } catch (err) {
+            setActionMessage('Approve failed: ' + err.message);
+        }
+    };
+
+    const handleSaveEdit = async function(sectionId) {
+        try {
+            await window.V2ApiService.submitReview(caseId, draftId, sectionId, {
+                action: 'edited',
+                reviewer_edit: editText,
+            });
+            setEditingSection(null);
+            setEditText('');
+            setActionMessage('Edit saved.');
+            await loadAll();
+        } catch (err) {
+            setActionMessage('Edit failed: ' + err.message);
+        }
+    };
+
+    const handleRejectRegenerate = async function(sectionId) {
+        try {
+            await window.V2ApiService.submitReview(caseId, draftId, sectionId, {
+                action: 'rejected',
+                regeneration_requested: true,
+                rejection_reason: 'Attorney requested regeneration',
+            });
+            await window.V2ApiService.regenerateSection(caseId, draftId, sectionId, {
+                visa_type: visaType,
+                force_generate: true,
+            });
+            setActionMessage('Section regenerated.');
+            await loadAll();
+        } catch (err) {
+            setActionMessage('Reject/regenerate failed: ' + err.message);
+        }
+    };
+
+    const handleExport = async function(format) {
+        try {
+            const result = await window.V2ApiService.exportDraft(caseId, draftId, format);
+            if (format === 'txt' && typeof result.content === 'string') {
+                const blob = new Blob([result.content], { type: 'text/plain' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'draft-' + draftId + '.txt';
+                a.click();
+                window.URL.revokeObjectURL(url);
+            } else if (format === 'json') {
+                const blob = new Blob([JSON.stringify(result.content, null, 2)], { type: 'application/json' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'draft-' + draftId + '.json';
+                a.click();
+                window.URL.revokeObjectURL(url);
+            }
+            setActionMessage('Export completed.');
+            await loadAll();
+        } catch (err) {
+            setActionMessage('Export failed: ' + err.message);
+        }
+    };
+
+    if (loading) {
+        return <div className="p-6 text-center text-gray-600">Loading draft...</div>;
+    }
+
+    if (error) {
+        return (
+            <div className="p-6">
+                <p className="text-red-600">{error}</p>
+                <button onClick={onBack} className="mt-4 text-[#1a365d] underline">Back to dashboard</button>
+            </div>
+        );
+    }
+
+    return (
+        <div className="max-w-5xl mx-auto p-6">
+            <div className="flex justify-between items-center mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold text-[#1a365d]">Draft Review</h1>
+                    <p className="text-sm text-gray-600">Case: {caseId} · Draft: {draftId}</p>
+                </div>
+                <button onClick={onBack} className="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">
+                    Back to Dashboard
+                </button>
+            </div>
+
+            {actionMessage && (
+                <p className="mb-4 text-sm text-blue-700 bg-blue-50 p-2 rounded">{actionMessage}</p>
+            )}
+
+            {orderedSections.map(function(section) {
+                const review = reviewBySectionId[section.id] || {};
+                const displayContent = review.latest_action === 'edited' && review.reviewer_edit
+                    ? review.reviewer_edit
+                    : section.content;
+                const statusLabel = review.latest_action || 'pending';
+
+                return (
+                    <div key={section.id} className="bg-white rounded-lg shadow p-6 mb-6">
+                        <div className="flex flex-wrap items-center gap-2 mb-4">
+                            <h2 className="text-lg font-semibold text-[#1a365d]">
+                                {formatSectionCode(section.section_code)}
+                            </h2>
+                            <span className={'text-xs px-2 py-1 rounded ' + reviewBadgeClass(review.latest_action)}>
+                                {statusLabel}
+                            </span>
+                            {section.kb_guidance_applied && (
+                                <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-800">
+                                    KB Guided
+                                </span>
+                            )}
+                        </div>
+
+                        {editingSection === section.id ? (
+                            <div className="mb-4">
+                                <textarea
+                                    className="w-full p-3 border rounded h-48"
+                                    value={editText}
+                                    onChange={function(e) { setEditText(e.target.value); }}
+                                />
+                                <div className="mt-2 flex gap-2">
+                                    <button
+                                        onClick={function() { handleSaveEdit(section.id); }}
+                                        className="bg-[#1a365d] text-white px-4 py-2 rounded"
+                                    >
+                                        Save Edit
+                                    </button>
+                                    <button
+                                        onClick={function() { setEditingSection(null); setEditText(''); }}
+                                        className="bg-gray-200 px-4 py-2 rounded"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="prose max-w-none mb-4">
+                                <p className="whitespace-pre-wrap text-gray-800 text-sm leading-relaxed">
+                                    {displayContent}
+                                </p>
+                            </div>
+                        )}
+
+                        <button
+                            onClick={function() {
+                                setOpenProvenance(openProvenance === section.id ? null : section.id);
+                            }}
+                            className="text-sm text-[#1a365d] underline mb-4"
+                        >
+                            {openProvenance === section.id ? 'Hide Provenance' : 'Show Provenance'}
+                        </button>
+
+                        {openProvenance === section.id && (
+                            <ProvenanceInspector
+                                section={section}
+                                traces={section.traces || []}
+                                kbGuidanceApplied={section.kb_guidance_applied}
+                                kbTraceCount={section.kb_trace_count}
+                            />
+                        )}
+
+                        {editingSection !== section.id && (
+                            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t">
+                                <button
+                                    onClick={function() { handleApprove(section.id); }}
+                                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                                >
+                                    Approve
+                                </button>
+                                <button
+                                    onClick={function() {
+                                        setEditingSection(section.id);
+                                        setEditText(displayContent);
+                                    }}
+                                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                                >
+                                    Edit
+                                </button>
+                                <button
+                                    onClick={function() { handleRejectRegenerate(section.id); }}
+                                    className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+                                >
+                                    Reject + Regenerate
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+
+            {reviewStatus && reviewStatus.export_eligible && (
+                <div className="bg-white rounded-lg shadow p-6 mb-6">
+                    <h3 className="text-lg font-semibold text-[#1a365d] mb-4">Export Draft</h3>
+                    <div className="flex gap-3 mb-4">
+                        <button
+                            onClick={function() { handleExport('json'); }}
+                            className="bg-[#1a365d] text-white px-4 py-2 rounded"
+                        >
+                            Export as JSON
+                        </button>
+                        <button
+                            onClick={function() { handleExport('txt'); }}
+                            className="bg-[#1a365d] text-white px-4 py-2 rounded"
+                        >
+                            Export as TXT
+                        </button>
+                    </div>
+                    {exportHistory.length > 0 && (
+                        <div>
+                            <h4 className="font-medium text-gray-700 mb-2">Export History</h4>
+                            <ul className="text-sm text-gray-600 space-y-1">
+                                {exportHistory.map(function(exp) {
+                                    return (
+                                        <li key={exp.id}>
+                                            {exp.export_format.toUpperCase()} · {exp.exported_by} · {new Date(exp.created_at).toLocaleString()}
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function CaseDashboard({ caseId, visaType, onReviewDraft, onBack }) {
+    const [workflow, setWorkflow] = useState(null);
+    const [invariantsOk, setInvariantsOk] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [message, setMessage] = useState('');
+    const [generating, setGenerating] = useState(false);
+
+    const loadState = async function() {
+        if (!caseId) return;
+        setLoading(true);
+        setError('');
+        try {
+            const wf = await window.V2ApiService.getWorkflowState(caseId);
+            setWorkflow(wf);
+            const inv = await window.V2ApiService.getInvariants();
+            const allOk = Object.values(inv.checks || {}).every(function(c) {
+                return c.status === 'ok';
+            });
+            setInvariantsOk(allOk);
+        } catch (err) {
+            setError(err.message || 'Failed to load workflow state');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(function() {
+        loadState();
+        const interval = setInterval(loadState, 30000);
+        return function() { clearInterval(interval); };
+    }, [caseId]);
+
+    const handleIngestKB = async function(kbDocumentId) {
+        try {
+            await window.V2ApiService.ingestKBDocument(kbDocumentId);
+            setMessage('KB ingestion queued.');
+            await loadState();
+        } catch (err) {
+            setMessage('KB ingest failed: ' + err.message);
+        }
+    };
+
+    const handleGenerate = async function() {
+        if (!workflow || !workflow.documents || workflow.documents.length === 0) {
+            setMessage('No documents available for generation.');
+            return;
+        }
+        const indexed = workflow.documents.find(function(d) {
+            return d.lifecycle_state === 'indexed';
+        });
+        if (!indexed) {
+            setMessage('No indexed documents available. Index documents before generating.');
+            return;
+        }
+        setGenerating(true);
+        try {
+            await window.V2ApiService.generateDraft(caseId, {
+                document_id: indexed.document_id,
+                visa_type: visaType || 'EB2',
+                force_generate: true,
+            });
+            setMessage('Draft generation started.');
+            await loadState();
+        } catch (err) {
+            setMessage('Generation failed: ' + err.message);
+        } finally {
+            setGenerating(false);
+        }
+    };
+
+    if (!caseId) {
+        return (
+            <div className="p-6 text-center text-gray-600">
+                Select a case in Document Upload to view the dashboard.
+            </div>
+        );
+    }
+
+    return (
+        <div className="max-w-5xl mx-auto p-6">
+            <div className="flex justify-between items-center mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold text-[#1a365d]">Case Dashboard</h1>
+                    <p className="text-sm text-gray-600">Case: {caseId} · Visa: {visaType || '—'}</p>
+                </div>
+                <div className="flex gap-2">
+                    <button onClick={loadState} className="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">
+                        Refresh
+                    </button>
+                    <button onClick={onBack} className="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">
+                        Back to Upload
+                    </button>
+                </div>
+            </div>
+
+            <div className="mb-4 flex items-center gap-2">
+                {invariantsOk === true && (
+                    <span className="text-green-700 font-medium">✓ All invariants OK</span>
+                )}
+                {invariantsOk === false && (
+                    <span className="text-red-700 font-medium">⚠ Invariant violation detected</span>
+                )}
+            </div>
+
+            {message && <p className="mb-4 text-sm text-blue-700 bg-blue-50 p-2 rounded">{message}</p>}
+            {error && <p className="mb-4 text-sm text-red-700 bg-red-50 p-2 rounded">{error}</p>}
+            {loading && !workflow && <p className="text-gray-600">Loading...</p>}
+
+            {workflow && (
+                <>
+                    <div className="bg-white rounded-lg shadow p-6 mb-6">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-lg font-semibold">Documents</h2>
+                            <button
+                                onClick={handleGenerate}
+                                disabled={generating}
+                                className="bg-[#1a365d] text-white px-4 py-2 rounded disabled:opacity-50"
+                            >
+                                {generating ? 'Generating...' : 'Generate Draft'}
+                            </button>
+                        </div>
+                        {workflow.documents.length === 0 ? (
+                            <p className="text-gray-500 text-sm">No documents uploaded.</p>
+                        ) : workflow.documents.map(function(doc) {
+                            return (
+                                <div key={doc.document_id} className="flex justify-between items-center py-2 border-b last:border-0">
+                                    <span className="text-sm">{doc.name}</span>
+                                    <span className={'text-xs px-2 py-1 rounded ' + lifecycleBadgeClass(doc.lifecycle_state)}>
+                                        {doc.lifecycle_state}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow p-6 mb-6">
+                        <h2 className="text-lg font-semibold mb-4">KB Documents</h2>
+                        {workflow.kb_documents.length === 0 ? (
+                            <p className="text-gray-500 text-sm">No KB documents.</p>
+                        ) : workflow.kb_documents.map(function(kb) {
+                            return (
+                                <div key={kb.kb_document_id} className="flex justify-between items-center py-2 border-b last:border-0">
+                                    <div>
+                                        <span className="text-sm font-medium">{kb.title}</span>
+                                        <span className={'ml-2 text-xs px-2 py-1 rounded ' + lifecycleBadgeClass(kb.lifecycle_state)}>
+                                            {kb.lifecycle_state}
+                                        </span>
+                                        <span className="ml-2 text-xs text-gray-500">{kb.chunk_count} chunks</span>
+                                    </div>
+                                    {kb.lifecycle_state !== 'indexed' && (
+                                        <button
+                                            onClick={function() { handleIngestKB(kb.kb_document_id); }}
+                                            className="text-sm bg-[#1a365d] text-white px-3 py-1 rounded"
+                                        >
+                                            Ingest
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h2 className="text-lg font-semibold mb-4">Drafts</h2>
+                        {workflow.drafts.length === 0 ? (
+                            <p className="text-gray-500 text-sm">No drafts yet.</p>
+                        ) : workflow.drafts.map(function(draft) {
+                            return (
+                                <div key={draft.draft_id} className="flex justify-between items-center py-3 border-b last:border-0">
+                                    <div>
+                                        <span className="text-sm font-medium">{draft.draft_id.slice(0, 8)}...</span>
+                                        <span className="ml-2 text-xs text-gray-500">{draft.overall_status}</span>
+                                        <span className="ml-2 text-xs text-gray-500">
+                                            {draft.sections_approved}/{draft.section_count} approved
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={function() { onReviewDraft(draft.draft_id); }}
+                                        className="bg-[#1a365d] text-white px-3 py-1 rounded text-sm"
+                                    >
+                                        Review
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
+function AttorneyWorkflowApp() {
+    const [screen, setScreen] = useState('upload');
+    const [caseId, setCaseId] = useState('');
+    const [visaType, setVisaType] = useState('');
+    const [draftId, setDraftId] = useState(null);
+
+    return (
+        <div>
+            <div className="bg-white border-b mb-4">
+                <div className="max-w-5xl mx-auto px-6 py-3 flex gap-4">
+                    <button
+                        onClick={function() { setScreen('upload'); }}
+                        className={screen === 'upload' ? 'font-bold text-[#1a365d]' : 'text-gray-600'}
+                    >
+                        Document Upload
+                    </button>
+                    <button
+                        onClick={function() { setScreen('dashboard'); }}
+                        className={screen === 'dashboard' ? 'font-bold text-[#1a365d]' : 'text-gray-600'}
+                        disabled={!caseId}
+                    >
+                        Case Dashboard
+                    </button>
+                </div>
+            </div>
+
+            {screen === 'upload' && (
+                <DocumentIngestion
+                    caseId={caseId}
+                    setCaseId={setCaseId}
+                    visaType={visaType}
+                    setVisaType={setVisaType}
+                />
+            )}
+
+            {screen === 'dashboard' && (
+                <CaseDashboard
+                    caseId={caseId}
+                    visaType={visaType}
+                    onReviewDraft={function(id) {
+                        setDraftId(id);
+                        setScreen('review');
+                    }}
+                    onBack={function() { setScreen('upload'); }}
+                />
+            )}
+
+            {screen === 'review' && draftId && (
+                <DraftReviewScreen
+                    caseId={caseId}
+                    draftId={draftId}
+                    visaType={visaType || 'EB2'}
+                    onBack={function() { setScreen('dashboard'); }}
+                />
+            )}
+        </div>
+    );
+}
+
+window.AttorneyWorkflowApp = AttorneyWorkflowApp;
