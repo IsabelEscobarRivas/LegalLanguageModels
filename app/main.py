@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.api.cases.router import router as cases_router
 from app.api.documents.router import router as documents_router
 from app.api.events.router import router as events_router
+from app.api.kb.router import router as kb_router
 from app.classification.router import router as classification_router
 from app.core import models  # noqa: F401 - register models on Base.metadata
 from app.core.database import get_db
@@ -50,6 +51,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(cases_router)
 app.include_router(documents_router)
+app.include_router(kb_router)
 app.include_router(retrieval_router)
 app.include_router(events_router)
 app.include_router(classification_router)

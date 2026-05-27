@@ -2,9 +2,12 @@ import logging
 import os
 from typing import Optional
 
+import openai
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.models import PromptTemplate
+from app.ingestion.embedder import EMBEDDING_DIMENSIONS, EMBEDDING_MODEL
 
 
 logger = logging.getLogger(__name__)
@@ -95,12 +98,80 @@ def get_kb_style_guidance(
     visa_type: str,
     section_code: str,
     evidence_summary: str,
+    db: Optional[Session] = None,
+    firm_id: Optional[str] = None,
 ) -> Optional[str]:
-    """KB injection point — stub for Sprint 4.
+    """Retrieve firm-scoped KB style guidance for a draft section.
 
-    Sprint 5 replaces this body with KB retrieval logic.
-    Callers must not be changed when Sprint 5 implements this.
-
-    Returns None always in Sprint 4.
+    When db or firm_id is omitted, returns None so existing callers remain
+    unchanged until Phase 4 wires generation context.
     """
-    return None
+    if db is None or firm_id is None:
+        return None
+
+    allowed_types_by_section = {
+        "background": ["style_guide", "firm_convention"],
+        "experience": ["style_guide", "firm_convention"],
+        "achievements": ["style_guide", "firm_convention"],
+        "expert_opinion": ["style_guide"],
+        "impact": ["style_guide", "firm_convention", "precedent_letter"],
+        "conclusion": ["style_guide", "firm_convention", "precedent_letter"],
+    }
+    allowed_types = allowed_types_by_section.get(section_code)
+    if not allowed_types:
+        return None
+
+    try:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return None
+        client = openai.OpenAI(api_key=api_key)
+        response = client.embeddings.create(
+            input=evidence_summary,
+            model=EMBEDDING_MODEL,
+            dimensions=EMBEDDING_DIMENSIONS,
+        )
+        query_vector = response.data[0].embedding
+    except Exception:
+        logger.exception(
+            "KB style guidance embedding failed for section %s", section_code
+        )
+        return None
+
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT kc.text, kc.chunk_index
+                FROM kb_chunks kc
+                JOIN kb_embeddings ke ON ke.kb_chunk_id = kc.id
+                WHERE kc.firm_id = :firm_id
+                  AND kc.kb_document_id IN (
+                      SELECT id FROM kb_documents
+                      WHERE firm_id = :firm_id
+                        AND document_type = ANY(:allowed_types)
+                        AND lifecycle_state = 'indexed'
+                  )
+                  AND ke.firm_id = :firm_id
+                ORDER BY ke.embedding <=> CAST(:query_vec AS vector)
+                LIMIT 3
+                """
+            ),
+            {
+                "firm_id": firm_id,
+                "allowed_types": allowed_types,
+                "query_vec": str(query_vector),
+            },
+        ).fetchall()
+    except Exception:
+        logger.exception(
+            "KB style guidance retrieval failed for section %s", section_code
+        )
+        return None
+
+    if not rows:
+        return None
+
+    return "\n\n".join(
+        f"Style guidance ({row[1]}): {row[0]}" for row in rows
+    )
