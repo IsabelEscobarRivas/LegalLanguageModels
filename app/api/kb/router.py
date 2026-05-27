@@ -14,6 +14,11 @@ from sqlalchemy.orm import Session
 from app.core.auth import TokenClaims, get_current_claims
 from app.core.database import get_db
 from app.core.models import KBChunk, KBDocument, KBEmbedding
+from app.api.kb.invariants import (
+    check_provenance_separation,
+    check_kb_guidance_trace_isolation,
+    check_cross_firm_kb_access,
+)
 from app.ingestion.embedder import EMBEDDING_DIMENSIONS, EMBEDDING_MODEL
 
 
@@ -350,4 +355,25 @@ def get_kb_document_events(
             }
             for e in events
         ],
+    }
+
+
+@router.get("/kb/invariants")
+def check_kb_invariants(
+    *,
+    claims: TokenClaims = Depends(get_current_claims),
+    db: Session = Depends(get_db),
+):
+    """Run all KB provenance separation invariant checks.
+
+    Returns pass/fail for each invariant. Any 'violated' status is CRITICAL.
+    Intended for QA, CI health checks, and operational auditing.
+    """
+    return {
+        "firm_id": claims.firm_id,
+        "checks": {
+            "provenance_separation": check_provenance_separation(db),
+            "kb_guidance_trace_isolation": check_kb_guidance_trace_isolation(db),
+            "cross_firm_kb_access": check_cross_firm_kb_access(db, claims.firm_id),
+        },
     }
