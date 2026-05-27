@@ -20,6 +20,7 @@ from app.classification.classifier import (
 )
 from app.classification.coverage import evaluate_coverage
 from app.classification.feedback import submit_feedback
+from app.ingestion.chunker import chunk_document_version
 from app.core.auth import TokenClaims, get_current_claims, require_case_access
 from app.core.database import get_db
 from app.core.schemas import (
@@ -107,7 +108,12 @@ def trigger_version_classification(
     body: ClassifyVersionRequest,
     db: Session = Depends(get_db),
 ):
-    """Classify all chunks for a document version."""
+    """Classify all chunks for a document version.
+
+    UI uploads produce an extracted DocumentVersion first. If no chunks exist
+    yet, create them on demand so the attorney-facing Classify action works as
+    the next step after upload.
+    """
     result = classify_document_version(
         db,
         case_id,
@@ -116,6 +122,27 @@ def trigger_version_classification(
         body.visa_type,
         force_reclassify=body.force_reclassify,
     )
+    if result.get("status") == "failed" and result.get("reason") == "no_chunks":
+        chunk_result = chunk_document_version(
+            db,
+            case_id,
+            body.document_id,
+            body.version_id,
+            strategy="paragraph",
+        )
+        if chunk_result["status"] not in ("ok", "exists"):
+            raise HTTPException(
+                status_code=503,
+                detail="chunking: " + chunk_result.get("reason", "failed"),
+            )
+        result = classify_document_version(
+            db,
+            case_id,
+            body.document_id,
+            body.version_id,
+            body.visa_type,
+            force_reclassify=body.force_reclassify,
+        )
     status_val = result["status"]
 
     if status_val == "ok":

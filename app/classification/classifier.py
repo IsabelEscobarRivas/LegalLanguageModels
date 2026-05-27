@@ -394,7 +394,7 @@ def classify_chunk(
         )
         db.add(event)
 
-        if classifications_created > 0 and document.lifecycle_state == "embedded":
+        if classifications_created > 0 and document.lifecycle_state in ("chunked", "embedded"):
             document.lifecycle_state = "indexed"
             document.updated_at = datetime.utcnow()
 
