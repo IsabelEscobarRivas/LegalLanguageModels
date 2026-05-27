@@ -3,17 +3,7 @@
 
 (function() {
     // --- Config ---
-    const V1_TO_V2_ENDPOINTS = [
-        // [V1 pattern, V2 replacement]
-        [/^\/documents\//, '/api/v2/documents/'],
-        [/^\/cases\//, '/api/v2/cases/'],
-        [/^\/files\//, '/api/v2/files/'],
-        [/^\/upload\//, '/api/v2/upload/'],
-        [/^\/preview\//, '/api/v2/preview/'],
-        [/^\/download\//, '/api/v2/download/'],
-        [/^\/document_types\//, '/api/v2/document_types/'],
-        [/^\/auth\/login/, '/api/v2/auth/login'],
-    ];
+    const V1_TO_V2_ENDPOINTS = [];
 
     // --- Auth State ---
     const AUTH_KEYS = {
@@ -74,7 +64,7 @@
 
     // --- JWT Login ---
     async function v2Login({ username, password, lawFirmId }) {
-        const loginUrl = '/api/v2/auth/login';
+        const loginUrl = '/auth/login';
         const body = JSON.stringify({ username, password, law_firm_id: lawFirmId });
         const resp = await window._realFetch(loginUrl, {
             method: 'POST',
@@ -125,6 +115,80 @@
         clearAuthState,
         getToken,
         mapV1toV2,
+
+        createCase: async function(body) {
+            const response = await window.fetch(
+                '/cases',
+                {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body),
+                }
+            );
+            return parseJsonResponse(response);
+        },
+
+        uploadDocument: async function(caseId, file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            const response = await window.fetch(
+                '/cases/' + caseId + '/documents',
+                {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: formData,
+                }
+            );
+            return parseJsonResponse(response);
+        },
+
+        listCaseDocuments: async function(caseId) {
+            const response = await window.fetch(
+                '/cases/' + caseId + '/documents',
+                { headers: authHeaders() }
+            );
+            return parseJsonResponse(response);
+        },
+
+        listDocumentVersions: async function(caseId, documentId) {
+            const response = await window.fetch(
+                '/cases/' + caseId + '/documents/' + documentId + '/versions',
+                { headers: authHeaders() }
+            );
+            return parseJsonResponse(response);
+        },
+
+        classifyVersion: async function(caseId, body) {
+            const response = await window.fetch(
+                '/cases/' + caseId + '/classify-version',
+                {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body),
+                }
+            );
+            return parseJsonResponse(response);
+        },
+
+        getCoverage: async function(caseId, visaType) {
+            const response = await window.fetch(
+                '/cases/' + caseId + '/coverage?visa_type=' + encodeURIComponent(visaType),
+                { headers: authHeaders() }
+            );
+            return parseJsonResponse(response);
+        },
+
+        submitClassificationFeedback: async function(caseId, classificationResultId, body) {
+            const response = await window.fetch(
+                '/cases/' + caseId + '/classifications/' + classificationResultId + '/feedback',
+                {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body),
+                }
+            );
+            return parseJsonResponse(response);
+        },
 
         // Review endpoints
         submitReview: async function(caseId, draftId, sectionId, body) {
@@ -242,4 +306,4 @@
             return parseJsonResponse(response);
         },
     };
-})(); 
+})();

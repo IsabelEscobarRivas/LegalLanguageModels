@@ -589,7 +589,7 @@ function reviewBadgeClass(action) {
     return 'bg-gray-100 text-gray-600';
 }
 
-function ProvenanceInspector({ section, traces, kbGuidanceApplied, kbTraceCount }) {
+function ProvenanceInspector({ section, traces, kbGuidanceApplied, kbTraceCount, onFeedback }) {
     return (
         <div className="mt-4 space-y-3">
             <div className="border-2 border-blue-400 rounded-lg p-4 bg-blue-50">
@@ -609,6 +609,22 @@ function ProvenanceInspector({ section, traces, kbGuidanceApplied, kbTraceCount 
                                     <span> · Confidence: {Math.round(trace.confidence_score * 100)}%</span>
                                 )}
                             </p>
+                            {trace.classification_result_id && (
+                                <div className="mt-2 flex gap-2">
+                                    <button
+                                        onClick={function() { onFeedback(trace.classification_result_id, 'confirmed'); }}
+                                        className="text-xs bg-green-600 text-white px-2 py-1 rounded"
+                                    >
+                                        Confirm
+                                    </button>
+                                    <button
+                                        onClick={function() { onFeedback(trace.classification_result_id, 'rejected'); }}
+                                        className="text-xs bg-red-600 text-white px-2 py-1 rounded"
+                                    >
+                                        Reject
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     );
                 }) : (
@@ -752,6 +768,20 @@ function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
         }
     };
 
+    const handleClassificationFeedback = async function(classificationResultId, action) {
+        try {
+            await window.V2ApiService.submitClassificationFeedback(caseId, classificationResultId, {
+                action: action,
+                rationale: action === 'confirmed'
+                    ? 'Confirmed by attorney during draft review.'
+                    : 'Rejected by attorney during draft review.',
+            });
+            setActionMessage('Classification feedback recorded.');
+        } catch (err) {
+            setActionMessage('Classification feedback failed: ' + err.message);
+        }
+    };
+
     if (loading) {
         return <div className="p-6 text-center text-gray-600">Loading draft...</div>;
     }
@@ -849,6 +879,7 @@ function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
                                 traces={section.traces || []}
                                 kbGuidanceApplied={section.kb_guidance_applied}
                                 kbTraceCount={section.kb_trace_count}
+                                onFeedback={handleClassificationFeedback}
                             />
                         )}
 
@@ -920,11 +951,17 @@ function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
 
 function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft, onBack }) {
     const [workflow, setWorkflow] = useState(null);
+    const [documents, setDocuments] = useState([]);
+    const [coverage, setCoverage] = useState(null);
     const [invariantsOk, setInvariantsOk] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
     const [generating, setGenerating] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [classifyingId, setClassifyingId] = useState(null);
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [newCaseRef, setNewCaseRef] = useState('');
     const [localCaseId, setLocalCaseId] = useState(caseId || '');
     const [localVisaType, setLocalVisaType] = useState(visaType || 'EB2');
 
@@ -945,6 +982,14 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
         try {
             const wf = await window.V2ApiService.getWorkflowState(activeCaseId);
             setWorkflow(wf);
+            const docs = await window.V2ApiService.listCaseDocuments(activeCaseId);
+            setDocuments(docs.documents || []);
+            try {
+                const coverageData = await window.V2ApiService.getCoverage(activeCaseId, localVisaType || visaType || 'EB2');
+                setCoverage(coverageData);
+            } catch (coverageErr) {
+                setCoverage(null);
+            }
             const inv = await window.V2ApiService.getInvariants();
             const allOk = Object.values(inv.checks || {}).every(function(c) {
                 return c.status === 'ok';
@@ -975,6 +1020,78 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
         setMessage('');
     };
 
+    const handleCreateCase = async function() {
+        if (!newCaseRef.trim()) {
+            setMessage('Enter a case reference.');
+            return;
+        }
+        setLoading(true);
+        setError('');
+        try {
+            const created = await window.V2ApiService.createCase({
+                case_ref: newCaseRef.trim(),
+                visa_type: localVisaType,
+            });
+            setCaseId(created.id);
+            setLocalCaseId(created.id);
+            setVisaType(created.visa_type);
+            setMessage('Case created.');
+        } catch (err) {
+            setMessage('Create case failed: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleUploadDocument = async function() {
+        if (!activeCaseId) {
+            setMessage('Load or create a case before uploading.');
+            return;
+        }
+        if (!selectedFile) {
+            setMessage('Choose a document to upload.');
+            return;
+        }
+        setUploading(true);
+        setMessage('');
+        try {
+            const uploaded = await window.V2ApiService.uploadDocument(activeCaseId, selectedFile);
+            setSelectedFile(null);
+            setMessage('Uploaded ' + uploaded.original_name + '.');
+            await loadState();
+        } catch (err) {
+            setMessage('Upload failed: ' + err.message);
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleClassifyDocument = async function(documentId) {
+        setClassifyingId(documentId);
+        setMessage('');
+        try {
+            const versionsData = await window.V2ApiService.listDocumentVersions(activeCaseId, documentId);
+            const versions = versionsData.versions || [];
+            if (versions.length === 0) {
+                setMessage('No document version found to classify.');
+                return;
+            }
+            const latest = versions[versions.length - 1];
+            const result = await window.V2ApiService.classifyVersion(activeCaseId, {
+                document_id: documentId,
+                version_id: latest.id,
+                visa_type: localVisaType || visaType || 'EB2',
+                force_reclassify: false,
+            });
+            setMessage('Classification completed: ' + result.classifications_created + ' classifications created.');
+            await loadState();
+        } catch (err) {
+            setMessage('Classification failed: ' + err.message);
+        } finally {
+            setClassifyingId(null);
+        }
+    };
+
     const handleIngestKB = async function(kbDocumentId) {
         try {
             await window.V2ApiService.ingestKBDocument(kbDocumentId);
@@ -986,11 +1103,11 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
     };
 
     const handleGenerate = async function() {
-        if (!workflow || !workflow.documents || workflow.documents.length === 0) {
+        if (!documents || documents.length === 0) {
             setMessage('No documents available for generation.');
             return;
         }
-        const indexed = workflow.documents.find(function(d) {
+        const indexed = documents.find(function(d) {
             return d.lifecycle_state === 'indexed';
         });
         if (!indexed) {
@@ -1000,7 +1117,7 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
         setGenerating(true);
         try {
             await window.V2ApiService.generateDraft(activeCaseId, {
-                document_id: indexed.document_id,
+                document_id: indexed.id,
                 visa_type: localVisaType || visaType || 'EB2',
                 force_generate: true,
             });
@@ -1039,12 +1156,32 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
                             <option value="EB1">EB1</option>
                         </select>
                     </div>
-                    <button
-                        onClick={handleApplyCase}
-                        className="bg-[#1a365d] text-white px-4 py-2 rounded"
-                    >
-                        Load Dashboard
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            onClick={handleApplyCase}
+                            className="bg-[#1a365d] text-white px-4 py-2 rounded"
+                        >
+                            Load Existing Case
+                        </button>
+                    </div>
+                    <div className="border-t pt-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">New Case Reference</label>
+                        <div className="flex flex-wrap gap-2">
+                            <input
+                                type="text"
+                                value={newCaseRef}
+                                onChange={function(e) { setNewCaseRef(e.target.value); }}
+                                className="flex-1 min-w-[220px] p-2 border rounded"
+                                placeholder="Client or matter reference"
+                            />
+                            <button
+                                onClick={handleCreateCase}
+                                className="bg-green-700 text-white px-4 py-2 rounded"
+                            >
+                                Create Case
+                            </button>
+                        </div>
+                    </div>
                     {message && <p className="text-sm text-red-600">{message}</p>}
                 </div>
             </div>
@@ -1061,9 +1198,6 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
                 <div className="flex gap-2">
                     <button onClick={loadState} className="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">
                         Refresh
-                    </button>
-                    <button onClick={onBack} className="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">
-                        Back to Upload
                     </button>
                 </div>
             </div>
@@ -1084,6 +1218,27 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
             {workflow && (
                 <div>
                     <div className="bg-white rounded-lg shadow p-6 mb-6">
+                        <h2 className="text-lg font-semibold mb-4">Upload & Classify Evidence</h2>
+                        <div className="flex flex-wrap gap-2 mb-4">
+                            <input
+                                type="file"
+                                onChange={function(e) { setSelectedFile(e.target.files[0]); }}
+                                className="flex-1 min-w-[220px] p-2 border rounded"
+                            />
+                            <button
+                                onClick={handleUploadDocument}
+                                disabled={uploading}
+                                className="bg-[#1a365d] text-white px-4 py-2 rounded disabled:opacity-50"
+                            >
+                                {uploading ? 'Uploading...' : 'Upload Document'}
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                            Upload creates the document version used for classification, coverage, and draft generation.
+                        </p>
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow p-6 mb-6">
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-lg font-semibold">Documents</h2>
                             <button
@@ -1094,18 +1249,49 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
                                 {generating ? 'Generating...' : 'Generate Draft'}
                             </button>
                         </div>
-                        {workflow.documents.length === 0 ? (
+                        {documents.length === 0 ? (
                             <p className="text-gray-500 text-sm">No documents uploaded.</p>
-                        ) : workflow.documents.map(function(doc) {
+                        ) : documents.map(function(doc) {
                             return (
-                                <div key={doc.document_id} className="flex justify-between items-center py-2 border-b last:border-0">
-                                    <span className="text-sm">{doc.name}</span>
-                                    <span className={'text-xs px-2 py-1 rounded ' + lifecycleBadgeClass(doc.lifecycle_state)}>
-                                        {doc.lifecycle_state}
-                                    </span>
+                                <div key={doc.id} className="flex justify-between items-center gap-3 py-2 border-b last:border-0">
+                                    <div>
+                                        <span className="text-sm">{doc.original_name}</span>
+                                        <span className={'ml-2 text-xs px-2 py-1 rounded ' + lifecycleBadgeClass(doc.lifecycle_state)}>
+                                            {doc.lifecycle_state}
+                                        </span>
+                                        <span className="ml-2 text-xs text-gray-500">{doc.version_count} version{doc.version_count === 1 ? '' : 's'}</span>
+                                    </div>
+                                    <button
+                                        onClick={function() { handleClassifyDocument(doc.id); }}
+                                        disabled={classifyingId === doc.id}
+                                        className="text-sm bg-blue-600 text-white px-3 py-1 rounded disabled:opacity-50"
+                                    >
+                                        {classifyingId === doc.id ? 'Classifying...' : 'Classify'}
+                                    </button>
                                 </div>
                             );
                         })}
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow p-6 mb-6">
+                        <h2 className="text-lg font-semibold mb-4">Coverage</h2>
+                        {coverage && coverage.coverage ? (
+                            <div>
+                                <p className="text-sm mb-3">
+                                    Overall status: <span className="font-medium">{coverage.overall_status}</span>
+                                </p>
+                                {coverage.coverage.map(function(item) {
+                                    return (
+                                        <div key={item.criteria_id} className="flex justify-between py-2 border-b last:border-0">
+                                            <span className="text-sm">{item.criteria_code} — {item.criteria_label}</span>
+                                            <span className="text-xs text-gray-600">{item.gap_status} · {item.chunk_count} chunks</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <p className="text-sm text-gray-500">Classify uploaded documents to populate coverage.</p>
+                        )}
                     </div>
 
                     <div className="bg-white rounded-lg shadow p-6 mb-6">
@@ -1150,7 +1336,11 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
                                         </span>
                                     </div>
                                     <button
-                                        onClick={function() { onReviewDraft(draft.draft_id); }}
+                                        onClick={function() {
+                                            setCaseId(activeCaseId);
+                                            setVisaType(localVisaType || visaType || 'EB2');
+                                            onReviewDraft(draft.draft_id);
+                                        }}
                                         className="bg-[#1a365d] text-white px-3 py-1 rounded text-sm"
                                     >
                                         Review
@@ -1222,7 +1412,7 @@ function JwtAuthBar() {
 }
 
 function AttorneyWorkflowApp() {
-    const [screen, setScreen] = useState('upload');
+    const [screen, setScreen] = useState('dashboard');
     const [caseId, setCaseId] = useState('');
     const [visaType, setVisaType] = useState('');
     const [draftId, setDraftId] = useState(null);
@@ -1233,28 +1423,13 @@ function AttorneyWorkflowApp() {
             <div className="bg-white border-b mb-4">
                 <div className="max-w-5xl mx-auto px-6 py-3 flex gap-4">
                     <button
-                        onClick={function() { setScreen('upload'); }}
-                        className={screen === 'upload' ? 'font-bold text-[#1a365d]' : 'text-gray-600'}
-                    >
-                        Document Upload
-                    </button>
-                    <button
                         onClick={function() { setScreen('dashboard'); }}
                         className={screen === 'dashboard' ? 'font-bold text-[#1a365d]' : 'text-gray-600'}
                     >
-                        Case Dashboard
+                        Case Workflow
                     </button>
                 </div>
             </div>
-
-            {screen === 'upload' && (
-                <DocumentIngestion
-                    caseId={caseId}
-                    setCaseId={setCaseId}
-                    visaType={visaType}
-                    setVisaType={setVisaType}
-                />
-            )}
 
             {screen === 'dashboard' && (
                 <CaseDashboard
@@ -1266,7 +1441,6 @@ function AttorneyWorkflowApp() {
                         setDraftId(id);
                         setScreen('review');
                     }}
-                    onBack={function() { setScreen('upload'); }}
                 />
             )}
 
