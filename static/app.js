@@ -918,20 +918,32 @@ function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
     );
 }
 
-function CaseDashboard({ caseId, visaType, onReviewDraft, onBack }) {
+function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft, onBack }) {
     const [workflow, setWorkflow] = useState(null);
     const [invariantsOk, setInvariantsOk] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
     const [generating, setGenerating] = useState(false);
+    const [localCaseId, setLocalCaseId] = useState(caseId || '');
+    const [localVisaType, setLocalVisaType] = useState(visaType || 'EB2');
+
+    useEffect(function() {
+        setLocalCaseId(caseId || '');
+    }, [caseId]);
+
+    useEffect(function() {
+        setLocalVisaType(visaType || 'EB2');
+    }, [visaType]);
+
+    const activeCaseId = caseId || localCaseId;
 
     const loadState = async function() {
-        if (!caseId) return;
+        if (!activeCaseId) return;
         setLoading(true);
         setError('');
         try {
-            const wf = await window.V2ApiService.getWorkflowState(caseId);
+            const wf = await window.V2ApiService.getWorkflowState(activeCaseId);
             setWorkflow(wf);
             const inv = await window.V2ApiService.getInvariants();
             const allOk = Object.values(inv.checks || {}).every(function(c) {
@@ -946,10 +958,22 @@ function CaseDashboard({ caseId, visaType, onReviewDraft, onBack }) {
     };
 
     useEffect(function() {
-        loadState();
-        const interval = setInterval(loadState, 30000);
-        return function() { clearInterval(interval); };
-    }, [caseId]);
+        if (activeCaseId) {
+            loadState();
+            const interval = setInterval(loadState, 30000);
+            return function() { clearInterval(interval); };
+        }
+    }, [activeCaseId]);
+
+    const handleApplyCase = function() {
+        if (!localCaseId.trim()) {
+            setMessage('Enter a case ID.');
+            return;
+        }
+        setCaseId(localCaseId.trim());
+        setVisaType(localVisaType);
+        setMessage('');
+    };
 
     const handleIngestKB = async function(kbDocumentId) {
         try {
@@ -975,9 +999,9 @@ function CaseDashboard({ caseId, visaType, onReviewDraft, onBack }) {
         }
         setGenerating(true);
         try {
-            await window.V2ApiService.generateDraft(caseId, {
+            await window.V2ApiService.generateDraft(activeCaseId, {
                 document_id: indexed.document_id,
-                visa_type: visaType || 'EB2',
+                visa_type: localVisaType || visaType || 'EB2',
                 force_generate: true,
             });
             setMessage('Draft generation started.');
@@ -989,10 +1013,40 @@ function CaseDashboard({ caseId, visaType, onReviewDraft, onBack }) {
         }
     };
 
-    if (!caseId) {
+    if (!activeCaseId) {
         return (
-            <div className="p-6 text-center text-gray-600">
-                Select a case in Document Upload to view the dashboard.
+            <div className="max-w-5xl mx-auto p-6">
+                <h1 className="text-2xl font-bold text-[#1a365d] mb-6">Case Dashboard</h1>
+                <div className="bg-white rounded-lg shadow p-6 space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Case ID</label>
+                        <input
+                            type="text"
+                            value={localCaseId}
+                            onChange={function(e) { setLocalCaseId(e.target.value); }}
+                            className="w-full p-2 border rounded"
+                            placeholder="129ecb0a-86d0-451c-a447-cc7bb5ab8269"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Visa Type</label>
+                        <select
+                            value={localVisaType}
+                            onChange={function(e) { setLocalVisaType(e.target.value); }}
+                            className="w-full p-2 border rounded"
+                        >
+                            <option value="EB2">EB2</option>
+                            <option value="EB1">EB1</option>
+                        </select>
+                    </div>
+                    <button
+                        onClick={handleApplyCase}
+                        className="bg-[#1a365d] text-white px-4 py-2 rounded"
+                    >
+                        Load Dashboard
+                    </button>
+                    {message && <p className="text-sm text-red-600">{message}</p>}
+                </div>
             </div>
         );
     }
@@ -1002,7 +1056,7 @@ function CaseDashboard({ caseId, visaType, onReviewDraft, onBack }) {
             <div className="flex justify-between items-center mb-6">
                 <div>
                     <h1 className="text-2xl font-bold text-[#1a365d]">Case Dashboard</h1>
-                    <p className="text-sm text-gray-600">Case: {caseId} · Visa: {visaType || '—'}</p>
+                    <p className="text-sm text-gray-600">Case: {activeCaseId} · Visa: {visaType || localVisaType || '—'}</p>
                 </div>
                 <div className="flex gap-2">
                     <button onClick={loadState} className="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">
@@ -1111,6 +1165,62 @@ function CaseDashboard({ caseId, visaType, onReviewDraft, onBack }) {
     );
 }
 
+function JwtAuthBar() {
+    const [token, setToken] = useState(window.V2ApiService.getToken() || '');
+    const [firmId, setFirmId] = useState(
+        (window.V2ApiService.getAuthState().lawFirmId) || '8f3e2a1b-4c5d-6e7f-8a9b-0c1d2e3f4a5b'
+    );
+    const [saved, setSaved] = useState(!!window.V2ApiService.getToken());
+
+    const handleSave = function() {
+        window.V2ApiService.setAuthState({ token: token.trim(), lawFirmId: firmId.trim() });
+        setSaved(true);
+    };
+
+    if (saved && token) {
+        return (
+            <div className="bg-white border-b px-6 py-2 text-sm text-gray-600 flex justify-between items-center">
+                <span>JWT configured · Firm: {firmId.slice(0, 8)}...</span>
+                <button
+                    onClick={function() {
+                        window.V2ApiService.clearAuthState();
+                        setToken('');
+                        setSaved(false);
+                    }}
+                    className="text-red-600 underline"
+                >
+                    Clear token
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-yellow-50 border-b px-6 py-3">
+            <p className="text-sm text-yellow-900 mb-2">Paste QA JWT token to authenticate API calls:</p>
+            <div className="flex flex-wrap gap-2">
+                <input
+                    type="text"
+                    value={token}
+                    onChange={function(e) { setToken(e.target.value); setSaved(false); }}
+                    className="flex-1 min-w-[200px] p-2 border rounded text-sm"
+                    placeholder="Bearer token (without prefix)"
+                />
+                <input
+                    type="text"
+                    value={firmId}
+                    onChange={function(e) { setFirmId(e.target.value); }}
+                    className="w-72 p-2 border rounded text-sm"
+                    placeholder="Firm ID"
+                />
+                <button onClick={handleSave} className="bg-[#1a365d] text-white px-4 py-2 rounded text-sm">
+                    Save Token
+                </button>
+            </div>
+        </div>
+    );
+}
+
 function AttorneyWorkflowApp() {
     const [screen, setScreen] = useState('upload');
     const [caseId, setCaseId] = useState('');
@@ -1119,6 +1229,7 @@ function AttorneyWorkflowApp() {
 
     return (
         <div>
+            <JwtAuthBar />
             <div className="bg-white border-b mb-4">
                 <div className="max-w-5xl mx-auto px-6 py-3 flex gap-4">
                     <button
@@ -1130,7 +1241,6 @@ function AttorneyWorkflowApp() {
                     <button
                         onClick={function() { setScreen('dashboard'); }}
                         className={screen === 'dashboard' ? 'font-bold text-[#1a365d]' : 'text-gray-600'}
-                        disabled={!caseId}
                     >
                         Case Dashboard
                     </button>
@@ -1149,7 +1259,9 @@ function AttorneyWorkflowApp() {
             {screen === 'dashboard' && (
                 <CaseDashboard
                     caseId={caseId}
+                    setCaseId={setCaseId}
                     visaType={visaType}
+                    setVisaType={setVisaType}
                     onReviewDraft={function(id) {
                         setDraftId(id);
                         setScreen('review');
