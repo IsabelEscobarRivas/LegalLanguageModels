@@ -7,6 +7,7 @@ Mirrors the cumulative state after Alembic revisions:
   * 0005_classification_schema — criteria/section reference, classification, coverage
   * 0006_add_txt_extraction_method — document_versions extraction_method txt
   * 0007_sprint4_schema — citation_text, affinity defaults, generation tables
+  * 0010_firm_id_propagation — firms table, cases.firm_id
 
 UUID primary keys are stored as String(36) for cross-DB compatibility.
 """
@@ -42,6 +43,23 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
+class Firm(Base):
+    __tablename__ = "firms"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    name = Column(String(200), nullable=False)
+    slug = Column(String(100), nullable=False, unique=True, index=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+    cases = relationship("Case", back_populates="firm", cascade="save-update, merge")
+
+
 class Case(Base):
     __tablename__ = "cases"
     __table_args__ = (
@@ -56,6 +74,12 @@ class Case(Base):
     )
 
     id = Column(String(36), primary_key=True, default=_uuid)
+    firm_id = Column(
+        String(36),
+        ForeignKey("firms.id", ondelete="RESTRICT", name="fk_cases_firm_id"),
+        nullable=False,
+        index=True,
+    )
     case_ref = Column(String(100), nullable=False, unique=True, index=True)
     visa_type = Column(String(20), nullable=False)
     status = Column(
@@ -79,6 +103,7 @@ class Case(Base):
         server_default=func.now(),
     )
 
+    firm = relationship("Firm", back_populates="cases")
     documents = relationship(
         "Document",
         back_populates="case",
