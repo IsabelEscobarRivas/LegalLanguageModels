@@ -8,6 +8,7 @@ Mirrors the cumulative state after Alembic revisions:
   * 0006_add_txt_extraction_method — document_versions extraction_method txt
   * 0007_sprint4_schema — citation_text, affinity defaults, generation tables
   * 0010_firm_id_propagation — firms table, cases.firm_id
+  * 0011_kb_schema — kb_documents, kb_chunks, kb_embeddings, kb_guidance_traces
 
 UUID primary keys are stored as String(36) for cross-DB compatibility.
 """
@@ -746,6 +747,12 @@ class DraftSection(Base):
     model_name = Column(String(100), nullable=False)
     model_version = Column(String(50), nullable=False)
     tokens_used = Column(Integer, nullable=True)
+    kb_guidance_applied = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
     created_at = Column(
         DateTime,
         nullable=False,
@@ -791,6 +798,154 @@ class GenerationTrace(Base):
     )
     citation_text = Column(Text, nullable=True)
     similarity_score = Column(Float, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class KBDocument(Base):
+    __tablename__ = "kb_documents"
+    __table_args__ = (
+        CheckConstraint(
+            "document_type IN ('style_guide', 'firm_convention', 'precedent_letter')",
+            name="ck_kb_documents_document_type",
+        ),
+        CheckConstraint(
+            "lifecycle_state IN ('uploaded', 'chunked', 'embedded', 'indexed')",
+            name="ck_kb_documents_lifecycle_state",
+        ),
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    firm_id = Column(
+        String(36),
+        ForeignKey("firms.id", ondelete="RESTRICT", name="fk_kb_documents_firm_id"),
+        nullable=False,
+        index=True,
+    )
+    title = Column(String(500), nullable=False)
+    document_type = Column(String(100), nullable=False)
+    s3_key = Column(String(1000), nullable=False)
+    lifecycle_state = Column(
+        String(50),
+        nullable=False,
+        default="uploaded",
+        server_default="uploaded",
+    )
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class KBChunk(Base):
+    __tablename__ = "kb_chunks"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    firm_id = Column(
+        String(36),
+        ForeignKey("firms.id", ondelete="RESTRICT", name="fk_kb_chunks_firm_id"),
+        nullable=False,
+        index=True,
+    )
+    kb_document_id = Column(
+        String(36),
+        ForeignKey(
+            "kb_documents.id",
+            ondelete="RESTRICT",
+            name="fk_kb_chunks_kb_document_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    chunk_index = Column(Integer, nullable=False)
+    text = Column(Text, nullable=False)
+    chunk_strategy = Column(String(50), nullable=False)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class KBEmbedding(Base):
+    __tablename__ = "kb_embeddings"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    firm_id = Column(
+        String(36),
+        ForeignKey("firms.id", ondelete="RESTRICT", name="fk_kb_embeddings_firm_id"),
+        nullable=False,
+        index=True,
+    )
+    kb_chunk_id = Column(
+        String(36),
+        ForeignKey(
+            "kb_chunks.id",
+            ondelete="RESTRICT",
+            name="fk_kb_embeddings_kb_chunk_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    embedding = Column(Vector(EMBEDDING_DIMENSIONS), nullable=False)
+    model_name = Column(String(100), nullable=False)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class KBGuidanceTrace(Base):
+    __tablename__ = "kb_guidance_traces"
+    __table_args__ = (
+        CheckConstraint(
+            "guidance_type IN ('style', 'rhetorical', 'convention')",
+            name="ck_kb_guidance_traces_guidance_type",
+        ),
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    draft_section_id = Column(
+        String(36),
+        ForeignKey(
+            "draft_sections.id",
+            ondelete="RESTRICT",
+            name="fk_kb_guidance_traces_draft_section_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    kb_chunk_id = Column(
+        String(36),
+        ForeignKey(
+            "kb_chunks.id",
+            ondelete="RESTRICT",
+            name="fk_kb_guidance_traces_kb_chunk_id",
+        ),
+        nullable=False,
+    )
+    firm_id = Column(
+        String(36),
+        ForeignKey("firms.id", ondelete="RESTRICT", name="fk_kb_guidance_traces_firm_id"),
+        nullable=False,
+        index=True,
+    )
+    guidance_type = Column(String(50), nullable=False)
     created_at = Column(
         DateTime,
         nullable=False,
