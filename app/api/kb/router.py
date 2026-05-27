@@ -275,72 +275,36 @@ def search_kb_document(
     }
 
 
-@router.post("/kb/documents/{kb_document_id}/ingest", status_code=200)
-def ingest_kb_document_sync(
+@router.post("/kb/documents/{kb_document_id}/ingest", status_code=202)
+async def ingest_kb_document_endpoint(
     *,
     kb_document_id: str,
     claims: TokenClaims = Depends(get_current_claims),
     db: Session = Depends(get_db),
 ):
-    """Run KB ingestion pipeline synchronously (Sprint 6A).
+    """Enqueue KB ingestion pipeline (Sprint 6B).
 
-    Progresses the KB document through:
-      uploaded → chunked → embedded → indexed
-
-    Returns final lifecycle_state and per-stage results.
-    Sprint 6B migrates this to an async ARQ task.
+    Returns 202 Accepted with job_id. Poll GET /kb/documents/{id} for
+    lifecycle_state = 'indexed' when ingestion completes.
     """
-    from app.kb.pipeline import chunk_kb_document, embed_kb_document, index_kb_document
+    from app.workers.enqueue import get_arq_pool, enqueue_ingest_kb_document
 
     kb_doc = _get_kb_document(db, kb_document_id, claims.firm_id)
     if kb_doc is None:
         raise HTTPException(status_code=404, detail="KB document not found")
 
-    if kb_doc.lifecycle_state == "indexed":
-        return {"status": "already_indexed", "lifecycle_state": "indexed"}
-
-    results = {}
-
-    if kb_doc.lifecycle_state == "uploaded":
-        result = chunk_kb_document(db, kb_document_id, claims.firm_id)
-        results["chunking"] = result
-        db.refresh(kb_doc)
-        if result["status"] not in ("ok", "exists"):
-            return {
-                "status": "failed",
-                "stage": "chunking",
-                "lifecycle_state": kb_doc.lifecycle_state,
-                "results": results,
-            }
-
-    if kb_doc.lifecycle_state == "chunked":
-        result = embed_kb_document(db, kb_document_id, claims.firm_id)
-        results["embedding"] = result
-        db.refresh(kb_doc)
-        if result["status"] == "failed":
-            return {
-                "status": "failed",
-                "stage": "embedding",
-                "lifecycle_state": kb_doc.lifecycle_state,
-                "results": results,
-            }
-
-    if kb_doc.lifecycle_state == "embedded":
-        result = index_kb_document(db, kb_document_id, claims.firm_id)
-        results["indexing"] = result
-        db.refresh(kb_doc)
-        if result["status"] != "ok":
-            return {
-                "status": "failed",
-                "stage": "indexing",
-                "lifecycle_state": kb_doc.lifecycle_state,
-                "results": results,
-            }
+    pool = await get_arq_pool()
+    job_id = await enqueue_ingest_kb_document(
+        pool,
+        kb_document_id=kb_document_id,
+        firm_id=claims.firm_id,
+    )
+    await pool.aclose()
 
     return {
-        "status": "ok",
-        "lifecycle_state": kb_doc.lifecycle_state,
-        "results": results,
+        "status": "queued",
+        "job_id": job_id,
+        "kb_document_id": kb_document_id,
     }
 
 
