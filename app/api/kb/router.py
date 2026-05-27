@@ -342,3 +342,48 @@ def ingest_kb_document_sync(
         "lifecycle_state": kb_doc.lifecycle_state,
         "results": results,
     }
+
+
+@router.get("/kb/documents/{kb_document_id}/events")
+def get_kb_document_events(
+    *,
+    kb_document_id: str,
+    claims: TokenClaims = Depends(get_current_claims),
+    db: Session = Depends(get_db),
+):
+    """Return all pipeline events for a KB document.
+
+    Firm-scoped: confirms kb_document belongs to claims.firm_id before
+    returning events. Events are identified by kb_document_id in detail JSONB.
+    """
+    from app.core.models import ProcessingEvent
+    from sqlalchemy import cast
+    from sqlalchemy.dialects.postgresql import JSONB
+
+    kb_doc = _get_kb_document(db, kb_document_id, claims.firm_id)
+    if kb_doc is None:
+        raise HTTPException(status_code=404, detail="KB document not found")
+
+    events = (
+        db.query(ProcessingEvent)
+        .filter(
+            ProcessingEvent.detail["kb_document_id"].astext == kb_document_id
+        )
+        .order_by(ProcessingEvent.created_at.asc())
+        .all()
+    )
+
+    return {
+        "kb_document_id": kb_document_id,
+        "events": [
+            {
+                "id": e.id,
+                "event_type": e.event_type,
+                "status": e.status,
+                "detail": e.detail,
+                "error_message": e.error_message,
+                "created_at": e.created_at.isoformat(),
+            }
+            for e in events
+        ],
+    }

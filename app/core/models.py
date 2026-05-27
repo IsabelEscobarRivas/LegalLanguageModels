@@ -224,6 +224,12 @@ class DocumentVersion(Base):
 
 
 class ProcessingEvent(Base):
+    """Operational audit trail for ingestion and KB pipelines.
+
+    case_id is null for KB pipeline events (kb_chunking_*, kb_embedding_*,
+    kb_indexing_*); those events identify the document via detail JSONB.
+    """
+
     __tablename__ = "processing_events"
     __table_args__ = (
         CheckConstraint(
@@ -236,7 +242,7 @@ class ProcessingEvent(Base):
     case_id = Column(
         String(36),
         ForeignKey("cases.id", name="fk_processing_events_case_id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     document_id = Column(

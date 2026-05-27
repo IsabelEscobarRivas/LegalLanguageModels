@@ -14,7 +14,7 @@ def write_event(
     db: Session,
     event_type: str,
     status: str,
-    case_id: str,
+    case_id: Optional[str] = None,
     document_id: Optional[str] = None,
     document_version_id: Optional[str] = None,
     detail: Optional[dict[str, Any]] = None,
