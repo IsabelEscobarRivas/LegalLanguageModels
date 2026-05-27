@@ -1,11 +1,11 @@
-"""JWT verification for Sprint 2 endpoints.
+"""JWT verification for Sprint 5 endpoints.
 
-HS256, secret from `JWT_SECRET` env var. Required claims: `exp`, `sub`, `case_ids`.
-Optional claims: `role`, `iat`. No `iss` or `aud` validation in Sprint 2.
+HS256, secret from `JWT_SECRET` env var. Required claims: `exp`, `sub`, `firm_id`.
+Optional claims: `role`, `iat`. No `iss` or `aud` validation in Sprint 5.
 
 Two public APIs:
   - get_current_claims:  validates the bearer token, returns TokenClaims
-  - require_case_access: asserts the path's case_id is in the claims, returns case_id
+  - require_case_access: confirms the path's case belongs to the token's firm_id
 """
 from dataclasses import dataclass
 from typing import Optional
@@ -14,6 +14,10 @@ import os
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.core.models import Case
 
 
 # Sprint 2 has no token issuance endpoint; `tokenUrl` is a placeholder so
@@ -26,7 +30,7 @@ JWT_ALGORITHM = "HS256"
 @dataclass
 class TokenClaims:
     sub: str
-    case_ids: list[str]
+    firm_id: str
     role: Optional[str] = None
 
 
@@ -63,41 +67,42 @@ def get_current_claims(token: str = Depends(oauth2_scheme)) -> TokenClaims:
             token,
             secret,
             algorithms=[JWT_ALGORITHM],
-            options={"require": ["exp", "sub"]},
+            options={"require": ["exp", "sub", "firm_id"]},
         )
     except jwt.PyJWTError:
         raise _invalid_token_exception()
 
     sub = payload.get("sub")
-    case_ids = payload.get("case_ids")
+    firm_id = payload.get("firm_id")
     role = payload.get("role")
 
     if not isinstance(sub, str) or not sub:
         raise _invalid_token_exception()
-    if not isinstance(case_ids, list) or not all(
-        isinstance(c, str) for c in case_ids
-    ):
+    if not isinstance(firm_id, str) or not firm_id:
         raise _invalid_token_exception()
     if role is not None and not isinstance(role, str):
         raise _invalid_token_exception()
 
-    return TokenClaims(sub=sub, case_ids=list(case_ids), role=role)
+    return TokenClaims(sub=sub, firm_id=firm_id, role=role)
 
 
 def require_case_access(
     case_id: str,
     claims: TokenClaims = Depends(get_current_claims),
+    db: Session = Depends(get_db),
 ) -> str:
-    """Confirm the path's `case_id` is in the token's `case_ids` claim.
+    """Confirm the path's case belongs to the token's firm.
 
     Returns the `case_id` unchanged so it can be used directly in endpoint
     signatures, e.g. `case_id: str = Depends(require_case_access)`.
 
-    Raises 403 if the case is not in the token's authorized list.
+    Raises 404 if the case is not found or not owned by the token's firm.
     """
-    if case_id not in claims.case_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access to this case is not permitted",
-        )
+    case = (
+        db.query(Case)
+        .filter(Case.id == case_id, Case.firm_id == claims.firm_id)
+        .first()
+    )
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
     return case_id

@@ -29,7 +29,11 @@ def create_case(
     db: Session = Depends(get_db),
     claims: TokenClaims = Depends(get_current_claims),
 ) -> CaseResponse:
-    case = Case(case_ref=payload.case_ref, visa_type=payload.visa_type)
+    case = Case(
+        case_ref=payload.case_ref,
+        visa_type=payload.visa_type,
+        firm_id=claims.firm_id,
+    )
     db.add(case)
     try:
         db.commit()

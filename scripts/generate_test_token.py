@@ -1,20 +1,22 @@
-"""Generate a JWT for QA against Sprint 2 endpoints.
+"""Generate a JWT for QA against Sprint 5 endpoints.
 
-This script is the QA testing surface for Step 3. Sprint 2 has no token
+This script is the QA testing surface for auth. Sprint 5 has no token
 issuance endpoint by design; tokens are minted manually here and pasted into
 client requests.
 
 Usage:
     JWT_SECRET=... python scripts/generate_test_token.py \\
         --sub user-123 \\
-        --case-ids <uuid-1> <uuid-2> \\
+        --firm-id 8f3e2a1b-4c5d-6e7f-8a9b-0c1d2e3f4a5b \\
         [--role admin] \\
         [--expires-in-hours 24]
+
+The default QA firm_id matches migration 0010 DEFAULT_FIRM_ID (Default Firm).
 
 The script writes the token to stdout and nothing else, so it composes:
 
     TOKEN=$(JWT_SECRET=secret python scripts/generate_test_token.py \\
-        --sub u --case-ids c1)
+        --sub u --firm-id 8f3e2a1b-4c5d-6e7f-8a9b-0c1d2e3f4a5b)
     curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/...
 """
 import argparse
@@ -26,11 +28,12 @@ import jwt
 
 
 JWT_ALGORITHM = "HS256"
+DEFAULT_FIRM_ID = "8f3e2a1b-4c5d-6e7f-8a9b-0c1d2e3f4a5b"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Generate a test JWT (HS256) for Sprint 2 endpoints."
+        description="Generate a test JWT (HS256) for Sprint 5 endpoints."
     )
     parser.add_argument(
         "--sub",
@@ -38,11 +41,13 @@ def main() -> int:
         help="Subject claim — user identifier.",
     )
     parser.add_argument(
-        "--case-ids",
-        nargs="+",
+        "--firm-id",
         required=True,
-        metavar="CASE_ID",
-        help="One or more case UUIDs this token authorizes access to.",
+        metavar="FIRM_ID",
+        help=(
+            "Firm UUID this token scopes access to "
+            f"(default QA firm: {DEFAULT_FIRM_ID})."
+        ),
     )
     parser.add_argument(
         "--role",
@@ -65,7 +70,7 @@ def main() -> int:
     now = datetime.now(tz=timezone.utc)
     payload: dict = {
         "sub": args.sub,
-        "case_ids": list(args.case_ids),
+        "firm_id": args.firm_id,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(hours=args.expires_in_hours)).timestamp()),
     }
