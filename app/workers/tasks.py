@@ -77,19 +77,26 @@ async def ingest_kb_document(
         ).first()
         if kb_doc is None:
             logger.error(
-                "ingest_kb_document: firm_id mismatch or doc not found "
+                "ingest_kb_document: firm_id mismatch or not found "
                 "kb_document_id=%s firm_id=%s", kb_document_id, firm_id
             )
             return {"status": "failed", "reason": "firm_boundary_violation"}
 
-        # Stub: KB chunking/embedding pipeline not yet implemented.
-        # Sprint 6 implements the full KB ingestion pipeline.
-        # This task exists to establish the queue pattern and firm validation.
-        logger.info(
-            "ingest_kb_document queued kb_document_id=%s (pipeline stub)",
-            kb_document_id
-        )
-        return {"status": "ok", "note": "pipeline_stub"}
+        from app.kb.pipeline import chunk_kb_document, embed_kb_document, index_kb_document
+
+        result = chunk_kb_document(db, kb_document_id, firm_id)
+        if result["status"] not in ("ok", "exists"):
+            return {"status": "failed", "reason": f"chunking: {result.get('reason')}"}
+
+        result = embed_kb_document(db, kb_document_id, firm_id)
+        if result["status"] == "failed":
+            return {"status": "failed", "reason": f"embedding: {result.get('reason')}"}
+
+        result = index_kb_document(db, kb_document_id, firm_id)
+        if result["status"] != "ok":
+            return {"status": "failed", "reason": f"indexing: {result.get('reason')}"}
+
+        return {"status": "ok", "kb_document_id": kb_document_id}
     except Exception as exc:
         logger.exception(
             "ingest_kb_document failed kb_document_id=%s", kb_document_id
