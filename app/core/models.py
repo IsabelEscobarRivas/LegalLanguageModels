@@ -958,3 +958,121 @@ class KBGuidanceTrace(Base):
         default=datetime.utcnow,
         server_default=func.now(),
     )
+
+
+class DraftSectionReview(Base):
+    __tablename__ = "draft_section_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('approved', 'rejected', 'edited')",
+            name="ck_draft_section_reviews_action",
+        ),
+        {"info": {"append_only": True}},
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    draft_section_id = Column(
+        String(36),
+        ForeignKey(
+            "draft_sections.id",
+            ondelete="RESTRICT",
+            name="fk_draft_section_reviews_draft_section_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    case_id = Column(
+        String(36),
+        ForeignKey(
+            "cases.id",
+            ondelete="RESTRICT",
+            name="fk_draft_section_reviews_case_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    firm_id = Column(
+        String(36),
+        ForeignKey(
+            "firms.id",
+            ondelete="RESTRICT",
+            name="fk_draft_section_reviews_firm_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    reviewer_id = Column(String(255), nullable=False)
+    action = Column(String(30), nullable=False)
+    reviewer_edit = Column(Text, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    regeneration_requested = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    regenerated_section_id = Column(
+        String(36),
+        ForeignKey("draft_sections.id", name="fk_draft_section_reviews_regenerated_section_id"),
+        nullable=True,
+    )
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class DraftExport(Base):
+    __tablename__ = "draft_exports"
+    __table_args__ = (
+        CheckConstraint(
+            "export_format IN ('json', 'txt', 'pdf')",
+            name="ck_draft_exports_export_format",
+        ),
+        {"info": {"append_only": True}},
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    draft_output_id = Column(
+        String(36),
+        ForeignKey(
+            "draft_outputs.id",
+            ondelete="RESTRICT",
+            name="fk_draft_exports_draft_output_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    case_id = Column(
+        String(36),
+        ForeignKey(
+            "cases.id",
+            ondelete="RESTRICT",
+            name="fk_draft_exports_case_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    firm_id = Column(
+        String(36),
+        ForeignKey(
+            "firms.id",
+            ondelete="RESTRICT",
+            name="fk_draft_exports_firm_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    exported_by = Column(String(255), nullable=False)
+    export_format = Column(String(30), nullable=False)
+    section_snapshot = Column(JSONB, nullable=False)
+    review_snapshot = Column(JSONB, nullable=False)
+    s3_export_key = Column(String(1000), nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
