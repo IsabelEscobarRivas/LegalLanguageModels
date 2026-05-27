@@ -67,13 +67,31 @@ def generate_draft_endpoint(
             .filter(DraftOutput.id == result["draft_id"])
             .first()
         )
+        sections = (
+            db.query(DraftSection)
+            .filter(DraftSection.draft_output_id == result["draft_id"])
+            .order_by(DraftSection.created_at.asc())
+            .all()
+        )
+        latest_by_code = {}
+        for section_row in sections:
+            latest_by_code[section_row.section_code] = section_row
+        sections_response = [
+            {
+                **section,
+                "kb_guidance_applied": latest_by_code[
+                    section["section_code"]
+                ].kb_guidance_applied,
+            }
+            for section in result["sections"]
+        ]
         return {
             "draft_id": result["draft_id"],
             "case_id": case_id,
             "visa_type": body.visa_type,
             "overall_status": result["overall_status"],
             "coverage_summary": result["coverage_summary"],
-            "sections": result["sections"],
+            "sections": sections_response,
             "created_at": draft.created_at.isoformat() if draft else None,
         }
     if status_val == "coverage_blocked":
@@ -167,6 +185,7 @@ def get_draft(
                 "content": section.content,
                 "prompt_template_id": section.prompt_template_id,
                 "tokens_used": section.tokens_used,
+                "kb_guidance_applied": section.kb_guidance_applied,
                 "created_at": section.created_at.isoformat(),
                 "traces": [
                     {
