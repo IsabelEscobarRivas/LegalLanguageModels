@@ -961,6 +961,10 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
     const [uploading, setUploading] = useState(false);
     const [classifyingId, setClassifyingId] = useState(null);
     const [selectedFile, setSelectedFile] = useState(null);
+    const [kbTitle, setKbTitle] = useState('');
+    const [kbDocumentType, setKbDocumentType] = useState('style_guide');
+    const [kbFile, setKbFile] = useState(null);
+    const [kbUploading, setKbUploading] = useState(false);
     const [newCaseRef, setNewCaseRef] = useState('');
     const [localCaseId, setLocalCaseId] = useState(caseId || '');
     const [localVisaType, setLocalVisaType] = useState(visaType || 'EB2');
@@ -1099,6 +1103,35 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
             await loadState();
         } catch (err) {
             setMessage('KB ingest failed: ' + err.message);
+        }
+    };
+
+    const handleUploadKB = async function() {
+        if (!kbTitle.trim()) {
+            setMessage('Enter a KB document title.');
+            return;
+        }
+        if (!kbFile) {
+            setMessage('Choose a KB document to upload.');
+            return;
+        }
+        setKbUploading(true);
+        setMessage('');
+        try {
+            const uploaded = await window.V2ApiService.uploadKBDocument(
+                kbTitle.trim(),
+                kbDocumentType,
+                kbFile
+            );
+            setKbTitle('');
+            setKbDocumentType('style_guide');
+            setKbFile(null);
+            setMessage('Uploaded KB document: ' + uploaded.title + '.');
+            await loadState();
+        } catch (err) {
+            setMessage('KB upload failed: ' + err.message);
+        } finally {
+            setKbUploading(false);
         }
     };
 
@@ -1296,6 +1329,42 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
 
                     <div className="bg-white rounded-lg shadow p-6 mb-6">
                         <h2 className="text-lg font-semibold mb-4">KB Documents</h2>
+                        <div className="border rounded p-4 mb-4 bg-gray-50">
+                            <h3 className="text-sm font-semibold text-gray-800 mb-3">Upload KB Guidance</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+                                <input
+                                    type="text"
+                                    value={kbTitle}
+                                    onChange={function(e) { setKbTitle(e.target.value); }}
+                                    className="p-2 border rounded text-sm"
+                                    placeholder="Title, e.g. Firm style guide"
+                                />
+                                <select
+                                    value={kbDocumentType}
+                                    onChange={function(e) { setKbDocumentType(e.target.value); }}
+                                    className="p-2 border rounded text-sm"
+                                >
+                                    <option value="style_guide">Style guide</option>
+                                    <option value="firm_convention">Firm convention</option>
+                                    <option value="precedent_letter">Precedent letter</option>
+                                </select>
+                                <input
+                                    type="file"
+                                    onChange={function(e) { setKbFile(e.target.files[0]); }}
+                                    className="p-2 border rounded text-sm bg-white"
+                                />
+                            </div>
+                            <button
+                                onClick={handleUploadKB}
+                                disabled={kbUploading}
+                                className="bg-purple-700 text-white px-4 py-2 rounded text-sm disabled:opacity-50"
+                            >
+                                {kbUploading ? 'Uploading KB...' : 'Upload KB Document'}
+                            </button>
+                            <p className="text-xs text-gray-500 mt-2">
+                                KB documents feed firm style guidance. After upload, click Ingest to make them available.
+                            </p>
+                        </div>
                         {workflow.kb_documents.length === 0 ? (
                             <p className="text-gray-500 text-sm">No KB documents.</p>
                         ) : workflow.kb_documents.map(function(kb) {

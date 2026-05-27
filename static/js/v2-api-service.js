@@ -269,6 +269,22 @@
         },
 
         // KB
+        uploadKBDocument: async function(title, documentType, file) {
+            const formData = new FormData();
+            formData.append('title', title);
+            formData.append('document_type', documentType);
+            formData.append('file', file);
+            const response = await window.fetch(
+                '/kb/documents',
+                {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: formData,
+                }
+            );
+            return parseJsonResponse(response);
+        },
+
         ingestKBDocument: async function(kbDocumentId) {
             const response = await window.fetch(
                 '/kb/documents/' + kbDocumentId + '/ingest',
