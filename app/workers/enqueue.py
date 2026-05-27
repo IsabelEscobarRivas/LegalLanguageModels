@@ -66,3 +66,22 @@ async def enqueue_classify_document_version(
         _queue_name="llm_tasks",
     )
     return job.job_id
+
+
+async def replay_failed_job(
+    pool,
+    *,
+    task_name: str,
+    kwargs: dict,
+) -> str:
+    """Re-enqueue a failed task with the same kwargs.
+
+    Caller is responsible for validating firm_id is present in kwargs
+    before calling this. Never call without firm_id in kwargs.
+    """
+    job = await pool.enqueue_job(
+        task_name,
+        _queue_name="llm_tasks",
+        **kwargs,
+    )
+    return job.job_id
