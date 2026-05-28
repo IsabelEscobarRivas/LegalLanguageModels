@@ -4,15 +4,27 @@ POST /cases/{case_id}/documents
 GET  /cases/{case_id}/documents/{document_id}
 GET  /cases/{case_id}/documents/{document_id}/versions
 GET  /cases/{case_id}/documents/{document_id}/versions/{version_id}/events
+POST /cases/{case_id}/documents/{document_id}/participation
+GET  /cases/{case_id}/documents/{document_id}/participation
 """
 import logging
+import uuid
+from datetime import datetime
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.auth import require_case_access
+from app.core.auth import TokenClaims, get_current_claims, require_case_access
 from app.core.database import get_db
-from app.core.models import Document, DocumentVersion, ProcessingEvent
+from app.core.models import (
+    Case,
+    Document,
+    DocumentParticipationEvent,
+    DocumentVersion,
+    ProcessingEvent,
+)
 from app.core.schemas import (
     DocumentDetail,
     DocumentUploadResponse,
@@ -32,6 +44,52 @@ from app.ingestion.service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["documents"])
+
+
+class ParticipationRequest(BaseModel):
+    action: Literal[
+        "excluded_from_retrieval",
+        "excluded_from_generation",
+        "archived",
+        "quarantined",
+        "superseded",
+        "restored",
+    ]
+    reason: Optional[str] = None
+
+
+PARTICIPATION_ACTION_MAP = {
+    "excluded_from_retrieval": {
+        "participation_state": "excluded_from_retrieval",
+        "retrieval_eligible": False,
+        "generation_eligible": False,
+    },
+    "excluded_from_generation": {
+        "participation_state": "excluded_from_generation",
+        "retrieval_eligible": True,
+        "generation_eligible": False,
+    },
+    "archived": {
+        "participation_state": "archived",
+        "retrieval_eligible": False,
+        "generation_eligible": False,
+    },
+    "quarantined": {
+        "participation_state": "quarantined",
+        "retrieval_eligible": False,
+        "generation_eligible": False,
+    },
+    "superseded": {
+        "participation_state": "superseded",
+        "retrieval_eligible": False,
+        "generation_eligible": False,
+    },
+    "restored": {
+        "participation_state": "active",
+        "retrieval_eligible": True,
+        "generation_eligible": True,
+    },
+}
 
 
 @router.post(
@@ -179,3 +237,100 @@ def list_version_events(
         version_id=version_id,
         events=[ProcessingEventResponse.model_validate(e) for e in events],
     )
+
+
+@router.post("/cases/{case_id}/documents/{document_id}/participation")
+def update_document_participation(
+    *,
+    case_id: str = Depends(require_case_access),
+    document_id: str,
+    body: ParticipationRequest,
+    claims: TokenClaims = Depends(get_current_claims),
+    db: Session = Depends(get_db),
+):
+    document = (
+        db.query(Document)
+        .join(Case, Case.id == Document.case_id)
+        .filter(
+            Document.id == document_id,
+            Document.case_id == case_id,
+            Case.firm_id == claims.firm_id,
+        )
+        .first()
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    previous_state = document.participation_state
+    mapping = PARTICIPATION_ACTION_MAP[body.action]
+    new_state = mapping["participation_state"]
+
+    document.participation_state = new_state
+    document.retrieval_eligible = mapping["retrieval_eligible"]
+    document.generation_eligible = mapping["generation_eligible"]
+    document.updated_at = datetime.utcnow()
+
+    event = DocumentParticipationEvent(
+        id=str(uuid.uuid4()),
+        document_id=document.id,
+        case_id=case_id,
+        firm_id=claims.firm_id,
+        actor_id=claims.sub,
+        action=body.action,
+        previous_state=previous_state,
+        new_state=new_state,
+        reason=body.reason,
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+
+    return {
+        "document_id": document.id,
+        "previous_state": previous_state,
+        "new_state": new_state,
+        "action": body.action,
+        "created_at": event.created_at.isoformat(),
+    }
+
+
+@router.get("/cases/{case_id}/documents/{document_id}/participation")
+def get_document_participation_history(
+    *,
+    case_id: str = Depends(require_case_access),
+    document_id: str,
+    db: Session = Depends(get_db),
+):
+    document = (
+        db.query(Document)
+        .filter(Document.id == document_id, Document.case_id == case_id)
+        .first()
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    events = (
+        db.query(DocumentParticipationEvent)
+        .filter(DocumentParticipationEvent.document_id == document_id)
+        .order_by(DocumentParticipationEvent.created_at.desc())
+        .all()
+    )
+
+    return {
+        "document_id": document_id,
+        "events": [
+            {
+                "id": event.id,
+                "document_id": event.document_id,
+                "case_id": event.case_id,
+                "firm_id": event.firm_id,
+                "actor_id": event.actor_id,
+                "action": event.action,
+                "previous_state": event.previous_state,
+                "new_state": event.new_state,
+                "reason": event.reason,
+                "created_at": event.created_at.isoformat(),
+            }
+            for event in events
+        ],
+    }

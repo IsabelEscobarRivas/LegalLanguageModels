@@ -262,6 +262,62 @@ class DocumentVersion(Base):
     )
 
 
+class DocumentParticipationEvent(Base):
+    __tablename__ = "document_participation_events"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('excluded_from_retrieval','excluded_from_generation',"
+            "'archived','quarantined','superseded','restored',"
+            "'marked_ingestion_failed')",
+            name="ck_dpe_action",
+        ),
+        {"info": {"append_only": True}},
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    document_id = Column(
+        String(36),
+        ForeignKey(
+            "documents.id",
+            ondelete="RESTRICT",
+            name="fk_dpe_document_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    case_id = Column(
+        String(36),
+        ForeignKey(
+            "cases.id",
+            ondelete="RESTRICT",
+            name="fk_dpe_case_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    firm_id = Column(
+        String(36),
+        ForeignKey(
+            "firms.id",
+            ondelete="RESTRICT",
+            name="fk_dpe_firm_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    actor_id = Column(String(255), nullable=False)
+    action = Column(String(50), nullable=False)
+    previous_state = Column(String(50), nullable=False)
+    new_state = Column(String(50), nullable=False)
+    reason = Column(Text, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
 class ProcessingEvent(Base):
     """Operational audit trail for ingestion and KB pipelines.
 

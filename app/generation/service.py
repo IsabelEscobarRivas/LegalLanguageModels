@@ -327,6 +327,8 @@ def _fetch_section_evidence(
         .filter(
             ClassificationResult.case_id == case_id,
             SectionAffinityReference.code == section_code,
+            Document.retrieval_eligible.is_(True),
+            Document.generation_eligible.is_(True),
         )
         .order_by(ClassificationResult.confidence_score.desc())
         .limit(EVIDENCE_TOP_K)

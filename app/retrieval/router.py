@@ -215,6 +215,8 @@ def retrieve(
                 .join(Document, Document.id == DocumentVersion.document_id)
                 .filter(Chunk.document_version_id.in_(version_id_list))
                 .filter(Document.case_id == case_id)
+                .filter(Document.retrieval_eligible.is_(True))
+                .filter(Document.generation_eligible.is_(True))
                 .order_by(sim_score.desc())
                 .limit(body.top_k)
                 .all()
