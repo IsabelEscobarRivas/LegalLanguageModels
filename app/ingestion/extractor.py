@@ -48,6 +48,90 @@ def extract_text(file_bytes: bytes, original_filename: str) -> ExtractionResult:
         return ExtractionResult(text="", method=None, status="failed", page_count=None)
 
 
+MINIMUM_TEXT_DENSITY = 0.05   # chars per byte of raw file
+MINIMUM_CONFIDENCE = 0.3      # OCR confidence floor
+OCR_CORRUPTION_PATTERNS = [
+    r'[^\x00-\x7F]{10,}',     # long non-ASCII runs
+    r'(\S)\1{8,}',             # 8+ repeated non-space chars
+]
+
+
+def assess_extraction_integrity(
+    result: ExtractionResult,
+    file_bytes: bytes,
+) -> dict:
+    """Assess whether extracted text meets quality thresholds.
+
+    Returns:
+      {
+        "integrity_status": str,  one of the CHECK values
+        "extraction_confidence": float,  0.0–1.0
+        "text_density": float,    chars / raw_bytes
+        "chunking_eligible": bool
+      }
+
+    Never raises.
+    """
+    import re
+
+    if result.status != "completed" or not result.text.strip():
+        return {
+            "integrity_status": "failed_low_confidence",
+            "extraction_confidence": 0.0,
+            "text_density": 0.0,
+            "chunking_eligible": False,
+        }
+
+    text = result.text
+    raw_len = max(len(file_bytes), 1)
+    text_density = len(text) / raw_len
+
+    # Corruption check
+    for pattern in OCR_CORRUPTION_PATTERNS:
+        if re.search(pattern, text):
+            return {
+                "integrity_status": "failed_corruption",
+                "extraction_confidence": 0.1,
+                "text_density": text_density,
+                "chunking_eligible": False,
+            }
+
+    if text_density < MINIMUM_TEXT_DENSITY:
+        return {
+            "integrity_status": "failed_low_density",
+            "extraction_confidence": 0.2,
+            "text_density": text_density,
+            "chunking_eligible": False,
+        }
+
+    # Confidence by method
+    method_confidence = {
+        "pypdf2": 0.95,
+        "docx": 0.98,
+        "txt": 1.0,
+        "textract": 0.90,
+        "ocr": 0.65,
+    }
+    confidence = method_confidence.get(result.method or "", 0.5)
+
+    if confidence < MINIMUM_CONFIDENCE:
+        return {
+            "integrity_status": "failed_low_confidence",
+            "extraction_confidence": confidence,
+            "text_density": text_density,
+            "chunking_eligible": False,
+        }
+
+    integrity_status = "passed_ocr" if result.method == "ocr" else "passed"
+
+    return {
+        "integrity_status": integrity_status,
+        "extraction_confidence": confidence,
+        "text_density": text_density,
+        "chunking_eligible": True,
+    }
+
+
 def _extract_txt(file_bytes: bytes) -> ExtractionResult:
     try:
         text = file_bytes.decode("utf-8", errors="replace").strip()

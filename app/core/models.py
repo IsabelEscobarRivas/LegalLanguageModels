@@ -118,9 +118,16 @@ class Document(Base):
         CheckConstraint(
             "lifecycle_state IN ("
             "'received', 'ingested', 'chunked', 'embedded', "
-            "'indexed', 'reviewed', 'final'"
+            "'indexed', 'reviewed', 'final', 'ingestion_failed'"
             ")",
             name="ck_documents_lifecycle_state",
+        ),
+        CheckConstraint(
+            "participation_state IN ("
+            "'active', 'excluded_from_retrieval', 'excluded_from_generation', "
+            "'archived', 'superseded', 'quarantined', 'ingestion_failed'"
+            ")",
+            name="ck_documents_participation_state",
         ),
     )
 
@@ -141,6 +148,24 @@ class Document(Base):
         default="received",
         server_default="received",
         index=True,
+    )
+    retrieval_eligible = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+    generation_eligible = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+    participation_state = Column(
+        String(50),
+        nullable=False,
+        default="active",
+        server_default="active",
     )
     created_at = Column(
         DateTime,
@@ -179,6 +204,13 @@ class DocumentVersion(Base):
             "extraction_status IN ('pending', 'completed', 'failed', 'skipped')",
             name="ck_document_versions_extraction_status",
         ),
+        CheckConstraint(
+            "integrity_status IN ("
+            "'pending', 'passed', 'failed_low_confidence', 'failed_low_density', "
+            "'failed_corruption', 'passed_ocr'"
+            ")",
+            name="ck_document_versions_integrity_status",
+        ),
         # Marker: this table is append-only. No UPDATE statements should be
         # issued against it anywhere in the codebase. Insert a new row with
         # an incremented version_number instead.
@@ -208,6 +240,13 @@ class DocumentVersion(Base):
     extracted_text_s3_key = Column(String(1000), nullable=True)
     page_count = Column(Integer, nullable=True)
     extracted_at = Column(DateTime, nullable=True)
+    extraction_confidence = Column(Float, nullable=True)
+    text_density = Column(Float, nullable=True)
+    integrity_status = Column(
+        String(50),
+        nullable=True,
+        server_default="pending",
+    )
     created_at = Column(
         DateTime,
         nullable=False,

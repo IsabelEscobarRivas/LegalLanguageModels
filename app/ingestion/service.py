@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from app.core.models import Case, Document, DocumentVersion
 from app.ingestion import s3 as s3_helper
 from app.ingestion.events import write_event
-from app.ingestion.extractor import extract_text
+from app.ingestion.extractor import assess_extraction_integrity, extract_text
 
 
 logger = logging.getLogger(__name__)
@@ -143,6 +143,7 @@ def ingest_document(
     )
 
     extraction = extract_text(file_bytes, original_filename)
+    integrity = assess_extraction_integrity(extraction, file_bytes)
 
     extracted_text_s3_key: Optional[str] = None
     final_extraction_status = extraction.status
@@ -175,6 +176,9 @@ def ingest_document(
         extraction_status=final_extraction_status,
         extracted_text_s3_key=extracted_text_s3_key,
         page_count=extraction.page_count,
+        extraction_confidence=integrity["extraction_confidence"],
+        text_density=integrity["text_density"],
+        integrity_status=integrity["integrity_status"],
         # extracted_at records when extraction *succeeded*; left NULL on
         # failed/skipped so the audit trail isn't misleading.
         extracted_at=(
@@ -184,6 +188,40 @@ def ingest_document(
     db.add(version)
     db.commit()
     db.refresh(version)
+
+    if not integrity["chunking_eligible"]:
+        write_event(
+            db,
+            event_type="ingestion_integrity_failed",
+            status="failed",
+            case_id=case_id,
+            document_id=document_id,
+            document_version_id=version.id,
+            detail={
+                "integrity_status": integrity["integrity_status"],
+                "extraction_confidence": integrity["extraction_confidence"],
+                "text_density": integrity["text_density"],
+                "document_id": document_id,
+            },
+        )
+        document.lifecycle_state = "ingestion_failed"
+        document.retrieval_eligible = False
+        document.generation_eligible = False
+        document.participation_state = "ingestion_failed"
+        document.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(document)
+        return {
+            "document_id": document.id,
+            "version_id": version.id,
+            "version_number": version.version_number,
+            "case_id": document.case_id,
+            "original_name": document.original_name,
+            "lifecycle_state": document.lifecycle_state,
+            "extraction_status": version.extraction_status,
+            "s3_raw_key": document.s3_raw_key,
+            "created_at": document.created_at,
+        }
 
     if final_extraction_status == "completed":
         write_event(
