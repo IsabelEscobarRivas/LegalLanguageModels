@@ -364,6 +364,7 @@ def get_effective_classification(
         "confidence_score": resolved["confidence_score"],
         "override_applied": resolved["override_applied"],
         "feedback_id": resolved["feedback_id"],
+        "excluded": False,
     }
 
 
