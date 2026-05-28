@@ -118,7 +118,7 @@ class Document(Base):
         CheckConstraint(
             "lifecycle_state IN ("
             "'received', 'ingested', 'chunked', 'embedded', "
-            "'indexed', 'reviewed', 'final', 'ingestion_failed'"
+            "'indexed', 'reviewed', 'final', 'ingestion_failed', 'purged'"
             ")",
             name="ck_documents_lifecycle_state",
         ),
@@ -915,7 +915,7 @@ class KBDocument(Base):
             name="ck_kb_documents_document_type",
         ),
         CheckConstraint(
-            "lifecycle_state IN ('uploaded', 'chunked', 'embedded', 'indexed')",
+            "lifecycle_state IN ('uploaded', 'chunked', 'embedded', 'indexed', 'purged')",
             name="ck_kb_documents_lifecycle_state",
         ),
     )
@@ -1165,6 +1165,35 @@ class DraftExport(Base):
     section_snapshot = Column(JSONB, nullable=False)
     review_snapshot = Column(JSONB, nullable=False)
     s3_export_key = Column(String(1000), nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+
+class AdminPurgeLog(Base):
+    __tablename__ = "admin_purge_log"
+    __table_args__ = (
+        CheckConstraint(
+            "target_type IN ('document','kb_document','draft_output')",
+            name="ck_purge_log_target_type",
+        ),
+        CheckConstraint(
+            "action IN ('hard_delete','s3_purge','db_purge')",
+            name="ck_purge_log_action",
+        ),
+        {"info": {"append_only": True}},
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    actor_id = Column(String(255), nullable=False, index=True)
+    firm_id = Column(String(36), nullable=False, index=True)
+    target_type = Column(String(50), nullable=False)
+    target_id = Column(String(36), nullable=False, index=True)
+    action = Column(String(50), nullable=False)
+    detail = Column(JSONB, nullable=True)
     created_at = Column(
         DateTime,
         nullable=False,

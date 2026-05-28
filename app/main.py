@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.api.admin.router import router as admin_router
 from app.api.cases.router import router as cases_router
 from app.api.documents.router import router as documents_router
 from app.api.events.router import router as events_router
@@ -60,6 +61,7 @@ app.include_router(classification_router)
 app.include_router(generation_router)
 app.include_router(review_router)
 app.include_router(observability_router)
+app.include_router(admin_router)
 
 
 @app.get("/")
