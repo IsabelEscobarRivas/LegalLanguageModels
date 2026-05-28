@@ -3,6 +3,8 @@
 POST /cases/{case_id}/chunks/{chunk_id}/classify
 POST /cases/{case_id}/classify-version
 POST /cases/{case_id}/classifications/{classification_result_id}/feedback
+GET  /cases/{case_id}/classifications/{classification_result_id}/feedback
+GET  /cases/{case_id}/chunks/{chunk_id}/effective-classification
 GET  /cases/{case_id}/coverage
 """
 import logging
@@ -20,9 +22,19 @@ from app.classification.classifier import (
 )
 from app.classification.coverage import evaluate_coverage
 from app.classification.feedback import submit_feedback
+from app.classification.resolver import resolve_effective_classification
 from app.ingestion.chunker import chunk_document_version
 from app.core.auth import TokenClaims, get_current_claims, require_case_access
 from app.core.database import get_db
+from app.core.models import (
+    Chunk,
+    ClassificationFeedback,
+    ClassificationResult,
+    CriteriaReference,
+    Document,
+    DocumentVersion,
+    SectionAffinityReference,
+)
 from app.core.schemas import (
     ClassificationFeedbackRequest,
     ClassificationFeedbackResponse,
@@ -215,6 +227,144 @@ def submit_classification_feedback(
 
     logger.error("Unexpected status from submit_feedback: %r", status_val)
     raise HTTPException(status_code=500, detail="Internal error")
+
+
+@router.get(
+    "/cases/{case_id}/classifications/{classification_result_id}/feedback",
+)
+def get_classification_feedback(
+    *,
+    case_id: str = Depends(require_case_access),
+    classification_result_id: str,
+    db: Session = Depends(get_db),
+):
+    """Retrieve all feedback rows for a classification result."""
+    result_row = (
+        db.query(ClassificationResult)
+        .filter(
+            ClassificationResult.id == classification_result_id,
+            ClassificationResult.case_id == case_id,
+        )
+        .first()
+    )
+    if result_row is None:
+        raise HTTPException(
+            status_code=404, detail="Classification result not found"
+        )
+
+    feedback_rows = (
+        db.query(ClassificationFeedback)
+        .filter(
+            ClassificationFeedback.classification_result_id
+            == classification_result_id
+        )
+        .order_by(ClassificationFeedback.created_at.desc())
+        .all()
+    )
+
+    return {
+        "classification_result_id": classification_result_id,
+        "feedback": [
+            {
+                "id": row.id,
+                "action": row.action,
+                "corrected_criteria_id": row.corrected_criteria_id,
+                "corrected_section_affinity_id": row.corrected_section_affinity_id,
+                "corrected_confidence_score": row.corrected_confidence_score,
+                "rationale": row.rationale,
+                "reviewer_id": row.reviewer_id,
+                "created_at": row.created_at.isoformat(),
+            }
+            for row in feedback_rows
+        ],
+    }
+
+
+@router.get("/cases/{case_id}/chunks/{chunk_id}/effective-classification")
+def get_effective_classification(
+    *,
+    case_id: str = Depends(require_case_access),
+    chunk_id: str,
+    db: Session = Depends(get_db),
+):
+    """Return the effective classification for a chunk, applying latest override."""
+    chunk = (
+        db.query(Chunk)
+        .join(DocumentVersion, DocumentVersion.id == Chunk.document_version_id)
+        .join(Document, Document.id == DocumentVersion.document_id)
+        .filter(Chunk.id == chunk_id, Document.case_id == case_id)
+        .first()
+    )
+    if chunk is None:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    classification_results = (
+        db.query(ClassificationResult)
+        .filter(
+            ClassificationResult.chunk_id == chunk_id,
+            ClassificationResult.case_id == case_id,
+        )
+        .all()
+    )
+    if not classification_results:
+        raise HTTPException(
+            status_code=404, detail="Classification result not found"
+        )
+
+    result_ids = [row.id for row in classification_results]
+    latest_feedback = (
+        db.query(ClassificationFeedback)
+        .filter(
+            ClassificationFeedback.classification_result_id.in_(result_ids),
+            ClassificationFeedback.action.in_(
+                ["confirmed", "corrected", "rejected"]
+            ),
+        )
+        .order_by(ClassificationFeedback.created_at.desc())
+        .first()
+    )
+
+    if latest_feedback is not None:
+        target_result_id = latest_feedback.classification_result_id
+    else:
+        target_result_id = max(
+            classification_results, key=lambda row: row.confidence_score
+        ).id
+
+    resolved = resolve_effective_classification(db, target_result_id)
+    if resolved["status"] == "not_found":
+        raise HTTPException(
+            status_code=404, detail="Classification result not found"
+        )
+
+    if resolved.get("excluded"):
+        return {
+            "excluded": True,
+            "reason": resolved.get("reason", "reviewer_rejected"),
+        }
+
+    criteria = (
+        db.query(CriteriaReference)
+        .filter(CriteriaReference.id == resolved["criteria_id"])
+        .first()
+    )
+    section = (
+        db.query(SectionAffinityReference)
+        .filter(SectionAffinityReference.id == resolved["section_affinity_id"])
+        .first()
+    )
+
+    return {
+        "chunk_id": chunk_id,
+        "classification_result_id": target_result_id,
+        "criteria_id": resolved["criteria_id"],
+        "criteria_code": criteria.code if criteria else "",
+        "section_affinity_id": resolved["section_affinity_id"],
+        "section_affinity_code": section.code if section else "",
+        "confidence_score": resolved["confidence_score"],
+        "override_applied": resolved["override_applied"],
+        "feedback_id": resolved["feedback_id"],
+    }
 
 
 @router.get(
