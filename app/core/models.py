@@ -1099,6 +1099,7 @@ class DraftSectionReview(Base):
     reviewer_id = Column(String(255), nullable=False)
     action = Column(String(30), nullable=False)
     reviewer_edit = Column(Text, nullable=True)
+    reviewer_notes = Column(Text, nullable=True)
     rejection_reason = Column(Text, nullable=True)
     regeneration_requested = Column(
         Boolean,

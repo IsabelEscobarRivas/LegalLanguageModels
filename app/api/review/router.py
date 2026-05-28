@@ -28,6 +28,7 @@ router = APIRouter(tags=["review"])
 class ReviewRequest(BaseModel):
     action: Literal["approved", "rejected", "edited"]
     reviewer_edit: Optional[str] = None
+    reviewer_notes: Optional[str] = None
     rejection_reason: Optional[str] = None
     regeneration_requested: bool = False
 
@@ -188,6 +189,7 @@ def submit_section_review(
         reviewer_id=claims.sub,
         action=body.action,
         reviewer_edit=body.reviewer_edit.strip() if body.reviewer_edit else None,
+        reviewer_notes=body.reviewer_notes.strip() if body.reviewer_notes else None,
         rejection_reason=body.rejection_reason,
         regeneration_requested=body.regeneration_requested,
     )
