@@ -1045,7 +1045,9 @@ function DocumentProvenancePanel({ caseId, document, onClose }) {
                                         ? 'text-green-600'
                                         : detail.integrity_status === 'passed_ocr'
                                             ? 'text-yellow-600'
-                                            : 'text-red-600')}>
+                                            : detail.integrity_status === 'pending'
+                                                ? 'text-gray-400'
+                                                : 'text-red-600')}>
                                     {detail.integrity_status || '—'}
                                 </span>
                                 <span className="text-gray-500">Pages</span>
@@ -1091,13 +1093,13 @@ function DocumentProvenancePanel({ caseId, document, onClose }) {
                                     Evidence Excerpts
                                 </span>
                                 <span className="font-medium">
-                                    {detail.evidence_excerpt_count ?? '—'}
+                                    {detail.evidence_excerpt_count != null ? detail.evidence_excerpt_count : '—'}
                                 </span>
                                 <span className="text-gray-500">
                                     Classifications
                                 </span>
                                 <span className="font-medium">
-                                    {detail.classification_count ?? '—'}
+                                    {detail.classification_count != null ? detail.classification_count : '—'}
                                 </span>
                             </div>
                         </div>
