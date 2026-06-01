@@ -40,6 +40,12 @@ class DocumentSummary(BaseModel):
     lifecycle_state: str
     version_count: int
     created_at: datetime
+    participation_state: str
+    retrieval_eligible: bool
+    generation_eligible: bool
+    extraction_method: Optional[str] = None
+    integrity_status: Optional[str] = None
+    evidence_excerpt_count: int
 
 
 class CaseDocumentList(BaseModel):
@@ -68,6 +74,18 @@ class DocumentDetail(BaseModel):
     s3_raw_key: str
     created_at: datetime
     latest_version: Optional[LatestVersion] = None
+    extraction_method: Optional[str] = None
+    extraction_status: Optional[str] = None
+    extraction_confidence: Optional[float] = None
+    text_density: Optional[float] = None
+    integrity_status: Optional[str] = None
+    page_count: Optional[int] = None
+    retrieval_eligible: bool
+    generation_eligible: bool
+    participation_state: str
+    evidence_excerpt_count: int
+    classification_count: int
+    draft_section_contributions: list[str]
 
 
 class DocumentUploadResponse(BaseModel):

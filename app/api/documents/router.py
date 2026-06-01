@@ -14,15 +14,20 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.auth import TokenClaims, get_current_claims, require_case_access
 from app.core.database import get_db
 from app.core.models import (
     Case,
+    Chunk,
+    ClassificationResult,
     Document,
     DocumentParticipationEvent,
     DocumentVersion,
+    DraftSection,
+    GenerationTrace,
     ProcessingEvent,
 )
 from app.core.schemas import (
@@ -44,6 +49,41 @@ from app.ingestion.service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["documents"])
+
+
+def _evidence_excerpt_count(db: Session, document_id: str) -> int:
+    return (
+        db.query(func.count(Chunk.id))
+        .join(DocumentVersion, DocumentVersion.id == Chunk.document_version_id)
+        .filter(DocumentVersion.document_id == document_id)
+        .scalar()
+        or 0
+    )
+
+
+def _classification_count(db: Session, document_id: str) -> int:
+    return (
+        db.query(func.count(ClassificationResult.id))
+        .join(Chunk, Chunk.id == ClassificationResult.chunk_id)
+        .join(DocumentVersion, DocumentVersion.id == Chunk.document_version_id)
+        .filter(DocumentVersion.document_id == document_id)
+        .scalar()
+        or 0
+    )
+
+
+def _draft_section_contributions(db: Session, document_id: str) -> list[str]:
+    rows = (
+        db.query(DraftSection.section_code)
+        .join(GenerationTrace, GenerationTrace.draft_section_id == DraftSection.id)
+        .join(Chunk, Chunk.id == GenerationTrace.chunk_id)
+        .join(DocumentVersion, DocumentVersion.id == Chunk.document_version_id)
+        .filter(DocumentVersion.document_id == document_id)
+        .distinct()
+        .order_by(DraftSection.section_code)
+        .all()
+    )
+    return [row[0] for row in rows]
 
 
 class ParticipationRequest(BaseModel):
@@ -168,6 +208,18 @@ def get_document(
         s3_raw_key=document.s3_raw_key,
         created_at=document.created_at,
         latest_version=latest_version,
+        extraction_method=latest.extraction_method if latest is not None else None,
+        extraction_status=latest.extraction_status if latest is not None else None,
+        extraction_confidence=latest.extraction_confidence if latest is not None else None,
+        text_density=latest.text_density if latest is not None else None,
+        integrity_status=latest.integrity_status if latest is not None else None,
+        page_count=latest.page_count if latest is not None else None,
+        retrieval_eligible=document.retrieval_eligible,
+        generation_eligible=document.generation_eligible,
+        participation_state=document.participation_state,
+        evidence_excerpt_count=_evidence_excerpt_count(db, document_id),
+        classification_count=_classification_count(db, document_id),
+        draft_section_contributions=_draft_section_contributions(db, document_id),
     )
 
 
