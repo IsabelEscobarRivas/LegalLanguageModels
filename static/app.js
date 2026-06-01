@@ -682,6 +682,11 @@ function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
     const loadAll = async function() {
         setLoading(true);
         setError('');
+        if (!caseId || !draftId) {
+            setError('Missing case ID or draft ID — cannot load draft.');
+            setLoading(false);
+            return;
+        }
         try {
             const token = window.V2ApiService.getToken();
             const headers = {};
@@ -1826,9 +1831,11 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
                                     </div>
                                     <button
                                         onClick={function() {
-                                            setCaseId(activeCaseId);
-                                            setVisaType(localVisaType || visaType || 'EB2');
-                                            onReviewDraft(draft.draft_id);
+                                            onReviewDraft(
+                                                draft.draft_id,
+                                                activeCaseId,
+                                                localVisaType || visaType || 'EB2'
+                                            );
                                         }}
                                         className="bg-[#1a365d] text-white px-3 py-1 rounded text-sm"
                                     >
@@ -1904,7 +1911,7 @@ function AttorneyWorkflowApp() {
     const [screen, setScreen] = useState('dashboard');
     const [caseId, setCaseId] = useState('');
     const [visaType, setVisaType] = useState('');
-    const [draftId, setDraftId] = useState(null);
+    const [reviewSession, setReviewSession] = useState(null);
 
     return (
         <div>
@@ -1926,19 +1933,29 @@ function AttorneyWorkflowApp() {
                     setCaseId={setCaseId}
                     visaType={visaType}
                     setVisaType={setVisaType}
-                    onReviewDraft={function(id) {
-                        setDraftId(id);
+                    onReviewDraft={function(draftIdToReview, reviewCaseId, reviewVisaType) {
+                        console.log('Opening draft review:', reviewCaseId, draftIdToReview, reviewVisaType);
+                        setReviewSession({
+                            caseId: reviewCaseId,
+                            draftId: draftIdToReview,
+                            visaType: reviewVisaType || 'EB2',
+                        });
+                        setCaseId(reviewCaseId);
+                        setVisaType(reviewVisaType || 'EB2');
                         setScreen('review');
                     }}
                 />
             )}
 
-            {screen === 'review' && draftId && (
+            {screen === 'review' && reviewSession && (
                 <DraftReviewScreen
-                    caseId={caseId}
-                    draftId={draftId}
-                    visaType={visaType || 'EB2'}
-                    onBack={function() { setScreen('dashboard'); }}
+                    caseId={reviewSession.caseId}
+                    draftId={reviewSession.draftId}
+                    visaType={reviewSession.visaType}
+                    onBack={function() {
+                        setReviewSession(null);
+                        setScreen('dashboard');
+                    }}
                 />
             )}
         </div>
