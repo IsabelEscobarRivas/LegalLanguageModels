@@ -166,11 +166,10 @@ def _discover_expert_sections(
         seen = set()
         sections = []
         prefix = "prong2_expert_opinion_"
-        max_slug_len = 50 - len(prefix)
         for (original_name,) in results:
             name = re.sub(r"\.[^.]+$", "", original_name)
             slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
-            slug = slug[:max_slug_len]
+            slug = slug[:27]  # cap slug: prefix is 22 chars, total must be under 50
             code = f"{prefix}{slug}"
             if code not in seen:
                 seen.add(code)
