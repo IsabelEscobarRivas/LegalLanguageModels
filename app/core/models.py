@@ -766,6 +766,15 @@ class PromptTemplate(Base):
     model_name = Column(String(100), nullable=False, default="gpt-4o", server_default="gpt-4o")
     max_tokens = Column(Integer, nullable=False, default=1000, server_default="1000")
     temperature = Column(Float, nullable=False, default=0.3, server_default="0.3")
+    word_count_min = Column(Integer, nullable=True)
+    word_count_max = Column(Integer, nullable=True)
+    prong_number = Column(Integer, nullable=True)
+    is_dynamic = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
     created_at = Column(
         DateTime,
         nullable=False,
