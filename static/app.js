@@ -978,9 +978,12 @@ function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
     );
 }
 
-function DocumentProvenancePanel({ caseId, document, onClose }) {
+function DocumentProvenancePanel({ caseId, document, onClose, onReplace }) {
     const [detail, setDetail] = React.useState(null);
     const [loading, setLoading] = React.useState(true);
+    const [replacing, setReplacing] = React.useState(false);
+    const [replaceFile, setReplaceFile] = React.useState(null);
+    const [replaceStatus, setReplaceStatus] = React.useState(null);
 
     React.useEffect(function() {
         window.V2ApiService.getDocumentDetail(caseId, document.id)
@@ -1148,6 +1151,93 @@ function DocumentProvenancePanel({ caseId, document, onClose }) {
                                 </div>
                             )}
                         </div>
+
+                        {(detail.participation_state === 'ingestion_failed' ||
+                          (detail.integrity_status && detail.integrity_status.startsWith('failed'))) && (
+                            <div className="border rounded-lg p-4 bg-red-50 mt-4">
+                                <h4 className="text-sm font-semibold text-red-700 mb-2">
+                                    Ingestion Failed — Action Required
+                                </h4>
+                                <p className="text-xs text-red-600 mb-3">
+                                    This document could not be processed and is excluded from
+                                    retrieval and generation. Common causes: scanned image-only PDF,
+                                    corrupted text layer, or encoding issues.
+                                </p>
+                                <p className="text-xs text-gray-600 mb-3">
+                                    To fix: upload a text-searchable version of the same document.
+                                    The original will remain in the audit trail.
+                                </p>
+
+                                {!replacing && (
+                                    <button
+                                        onClick={function() { setReplacing(true); }}
+                                        className="text-sm px-3 py-1.5 bg-red-600 text-white
+                                                   rounded hover:bg-red-700">
+                                        Replace Document
+                                    </button>
+                                )}
+
+                                {replacing && (
+                                    <div className="space-y-2">
+                                        <input
+                                            type="file"
+                                            accept=".pdf,.docx,.txt"
+                                            onChange={function(e) {
+                                                setReplaceFile(e.target.files[0] || null);
+                                            }}
+                                            className="text-sm text-gray-600"
+                                        />
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={async function() {
+                                                    if (!replaceFile) return;
+                                                    setReplaceStatus('uploading');
+                                                    try {
+                                                        const result = await window.V2ApiService
+                                                            .replaceDocument(caseId, document.id, replaceFile);
+                                                        if (result && result.document_id) {
+                                                            setReplaceStatus('success');
+                                                            setReplacing(false);
+                                                            setReplaceFile(null);
+                                                            if (onReplace) onReplace();
+                                                        } else {
+                                                            setReplaceStatus('error');
+                                                        }
+                                                    } catch(e) {
+                                                        setReplaceStatus('error');
+                                                    }
+                                                }}
+                                                disabled={!replaceFile || replaceStatus === 'uploading'}
+                                                className="text-sm px-3 py-1.5 bg-red-600 text-white
+                                                           rounded hover:bg-red-700 disabled:opacity-50">
+                                                {replaceStatus === 'uploading' ? 'Uploading...' : 'Upload Replacement'}
+                                            </button>
+                                            <button
+                                                onClick={function() {
+                                                    setReplacing(false);
+                                                    setReplaceFile(null);
+                                                    setReplaceStatus(null);
+                                                }}
+                                                className="text-sm px-3 py-1.5 bg-gray-200 text-gray-700
+                                                           rounded hover:bg-gray-300">
+                                                Cancel
+                                            </button>
+                                        </div>
+                                        {replaceStatus === 'success' && (
+                                            <p className="text-xs text-green-600">
+                                                Replacement uploaded. Classify the new document to include
+                                                it in generation.
+                                            </p>
+                                        )}
+                                        {replaceStatus === 'error' && (
+                                            <p className="text-xs text-red-600">
+                                                Upload failed. Check the file and try again.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                     </div>
                 )}
@@ -1615,6 +1705,10 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
                                 caseId={activeCaseId}
                                 document={provenanceDoc}
                                 onClose={function() { setProvenanceDoc(null); }}
+                                onReplace={function() {
+                                    setProvenanceDoc(null);
+                                    loadState();
+                                }}
                             />
                         )}
                     </div>

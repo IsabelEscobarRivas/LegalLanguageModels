@@ -150,6 +150,22 @@
             return parseJsonResponse(response);
         },
 
+        replaceDocument: async function(caseId, documentId, file) {
+            const token = window.V2ApiService.getToken();
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('replace_document_id', documentId);
+            const response = await fetch(
+                '/cases/' + caseId + '/documents',
+                {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    body: formData
+                }
+            );
+            return response.json();
+        },
+
         listCaseDocuments: async function(caseId) {
             const response = await window.fetch(
                 '/cases/' + caseId + '/documents',
