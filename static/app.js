@@ -582,6 +582,35 @@ function lifecycleBadgeClass(state) {
     return 'bg-gray-100 text-gray-800';
 }
 
+function participationBadgeClass(state) {
+    if (state === 'active') return 'bg-green-100 text-green-800';
+    if (state === 'excluded_from_retrieval') return 'bg-red-100 text-red-800';
+    if (state === 'excluded_from_generation') return 'bg-orange-100 text-orange-800';
+    if (state === 'quarantined') return 'bg-red-200 text-red-900';
+    if (state === 'archived') return 'bg-gray-200 text-gray-600';
+    if (state === 'ingestion_failed') return 'bg-red-100 text-red-700';
+    return 'bg-gray-100 text-gray-600';
+}
+
+function participationLabel(state) {
+    if (state === 'active') return 'Active';
+    if (state === 'excluded_from_retrieval') return 'Excluded';
+    if (state === 'excluded_from_generation') return 'Gen. Excluded';
+    if (state === 'quarantined') return 'Quarantined';
+    if (state === 'archived') return 'Archived';
+    if (state === 'ingestion_failed') return 'Ingestion Failed';
+    return state || 'Unknown';
+}
+
+function extractionMethodLabel(method) {
+    if (method === 'pypdf2') return 'Native PDF';
+    if (method === 'docx') return 'Native DOCX';
+    if (method === 'txt') return 'Plain Text';
+    if (method === 'textract') return 'AWS Textract';
+    if (method === 'ocr') return 'OCR (Tesseract)';
+    return method || 'Unknown';
+}
+
 function reviewBadgeClass(action) {
     if (action === 'approved') return 'bg-green-100 text-green-800';
     if (action === 'edited') return 'bg-blue-100 text-blue-800';
@@ -949,6 +978,188 @@ function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
     );
 }
 
+function DocumentProvenancePanel({ caseId, document, onClose }) {
+    const [detail, setDetail] = React.useState(null);
+    const [loading, setLoading] = React.useState(true);
+
+    React.useEffect(function() {
+        window.V2ApiService.getDocumentDetail(caseId, document.id)
+            .then(function(data) {
+                setDetail(data);
+                setLoading(false);
+            })
+            .catch(function() { setLoading(false); });
+    }, [document.id]);
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center
+                        justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl
+                            max-h-screen overflow-y-auto p-6">
+                <div className="flex justify-between items-start mb-4">
+                    <h3 className="text-lg font-semibold text-gray-800">
+                        Document Provenance
+                    </h3>
+                    <button onClick={onClose}
+                        className="text-gray-400 hover:text-gray-600 text-xl">
+                        ✕
+                    </button>
+                </div>
+
+                <p className="text-sm font-medium text-gray-700 mb-4 truncate">
+                    {document.original_name}
+                </p>
+
+                {loading && (
+                    <p className="text-sm text-gray-400">Loading provenance...</p>
+                )}
+
+                {!loading && detail && (
+                    <div className="space-y-4">
+
+                        {/* Extraction Diagnostics */}
+                        <div className="border rounded-lg p-4 bg-gray-50">
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                                Extraction Diagnostics
+                            </h4>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                                <span className="text-gray-500">Extraction Method</span>
+                                <span className="font-medium">
+                                    {extractionMethodLabel(detail.extraction_method)}
+                                </span>
+                                <span className="text-gray-500">Confidence</span>
+                                <span className="font-medium">
+                                    {detail.extraction_confidence != null
+                                        ? Math.round(detail.extraction_confidence * 100) + '%'
+                                        : '—'}
+                                </span>
+                                <span className="text-gray-500">Text Density</span>
+                                <span className="font-medium">
+                                    {detail.text_density != null
+                                        ? detail.text_density.toFixed(3)
+                                        : '—'}
+                                </span>
+                                <span className="text-gray-500">Integrity</span>
+                                <span className={'font-medium ' +
+                                    (detail.integrity_status === 'passed'
+                                        ? 'text-green-600'
+                                        : detail.integrity_status === 'passed_ocr'
+                                            ? 'text-yellow-600'
+                                            : 'text-red-600')}>
+                                    {detail.integrity_status || '—'}
+                                </span>
+                                <span className="text-gray-500">Pages</span>
+                                <span className="font-medium">
+                                    {detail.page_count || '—'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Participation */}
+                        <div className="border rounded-lg p-4 bg-gray-50">
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                                Participation
+                            </h4>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                                <span className="text-gray-500">State</span>
+                                <span className={'inline-block px-2 py-0.5 rounded text-xs font-medium ' +
+                                    participationBadgeClass(detail.participation_state)}>
+                                    {participationLabel(detail.participation_state)}
+                                </span>
+                                <span className="text-gray-500">Retrieval</span>
+                                <span className={detail.retrieval_eligible
+                                    ? 'text-green-600 font-medium'
+                                    : 'text-red-600 font-medium'}>
+                                    {detail.retrieval_eligible ? 'Eligible' : 'Excluded'}
+                                </span>
+                                <span className="text-gray-500">Generation</span>
+                                <span className={detail.generation_eligible
+                                    ? 'text-green-600 font-medium'
+                                    : 'text-red-600 font-medium'}>
+                                    {detail.generation_eligible ? 'Eligible' : 'Excluded'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Evidence Excerpts */}
+                        <div className="border rounded-lg p-4 bg-blue-50">
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                                Evidence Excerpts
+                            </h4>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                                <span className="text-gray-500">
+                                    Evidence Excerpts
+                                </span>
+                                <span className="font-medium">
+                                    {detail.evidence_excerpt_count ?? '—'}
+                                </span>
+                                <span className="text-gray-500">
+                                    Classifications
+                                </span>
+                                <span className="font-medium">
+                                    {detail.classification_count ?? '—'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Draft Section Contributions */}
+                        <div className="border rounded-lg p-4 bg-green-50">
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                                Draft Section Contributions
+                            </h4>
+                            {detail.draft_section_contributions &&
+                             detail.draft_section_contributions.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                    {detail.draft_section_contributions.map(
+                                        function(section) {
+                                            return (
+                                                <span key={section}
+                                                    className="px-2 py-1 bg-green-100
+                                                               text-green-800 rounded
+                                                               text-xs font-medium capitalize">
+                                                    {section.replace('_', ' ')}
+                                                </span>
+                                            );
+                                        }
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="text-sm text-gray-500">
+                                    <p className="font-medium">No draft participation</p>
+                                    {detail.integrity_status &&
+                                     detail.integrity_status.startsWith('failed') && (
+                                        <p className="text-red-500 mt-1">
+                                            Reason: ingestion integrity failed
+                                        </p>
+                                    )}
+                                    {!detail.retrieval_eligible && (
+                                        <p className="text-red-500 mt-1">
+                                            Reason: excluded from retrieval
+                                        </p>
+                                    )}
+                                    {detail.retrieval_eligible &&
+                                     detail.evidence_excerpt_count === 0 && (
+                                        <p className="text-gray-400 mt-1">
+                                            Reason: no eligible evidence excerpts
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                    </div>
+                )}
+
+                {!loading && !detail && (
+                    <p className="text-sm text-red-500">
+                        Could not load provenance details.
+                    </p>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft, onBack }) {
     const [existingCases, setExistingCases] = useState([]);
     const [caseSearch, setCaseSearch] = useState('');
@@ -971,6 +1182,7 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
     const [newCaseRef, setNewCaseRef] = useState('');
     const [localCaseId, setLocalCaseId] = useState(caseId || '');
     const [localVisaType, setLocalVisaType] = useState(visaType || 'EB2');
+    const [provenanceDoc, setProvenanceDoc] = useState(null);
 
     useEffect(function() {
         setLocalCaseId(caseId || '');
@@ -1364,23 +1576,45 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
                         ) : documents.map(function(doc) {
                             return (
                                 <div key={doc.id} className="flex justify-between items-center gap-3 py-2 border-b last:border-0">
-                                    <div>
+                                    <div className="flex flex-wrap items-center gap-y-1">
                                         <span className="text-sm">{doc.original_name}</span>
-                                        <span className={'ml-2 text-xs px-2 py-1 rounded ' + lifecycleBadgeClass(doc.lifecycle_state)}>
+                                        <span className={'ml-1 text-xs px-2 py-1 rounded ' + lifecycleBadgeClass(doc.lifecycle_state)}>
                                             {doc.lifecycle_state}
                                         </span>
+                                        <span className={'ml-1 text-xs px-2 py-1 rounded ' +
+                                            participationBadgeClass(doc.participation_state)}>
+                                            {participationLabel(doc.participation_state)}
+                                        </span>
+                                        <span className="ml-2 text-xs text-gray-400">
+                                            {extractionMethodLabel(doc.extraction_method)}
+                                        </span>
+                                        <span className="ml-2 text-xs text-gray-400">
+                                            {doc.evidence_excerpt_count || 0} Evidence Excerpts
+                                        </span>
                                         <span className="ml-2 text-xs text-gray-500">{doc.version_count} version{doc.version_count === 1 ? '' : 's'}</span>
+                                        <button
+                                            onClick={function() { setProvenanceDoc(doc); }}
+                                            className="ml-2 text-xs text-blue-600 hover:text-blue-800 underline">
+                                            View Provenance
+                                        </button>
                                     </div>
                                     <button
                                         onClick={function() { handleClassifyDocument(doc.id); }}
                                         disabled={classifyingId === doc.id}
-                                        className="text-sm bg-blue-600 text-white px-3 py-1 rounded disabled:opacity-50"
+                                        className="text-sm bg-blue-600 text-white px-3 py-1 rounded disabled:opacity-50 shrink-0"
                                     >
                                         {classifyingId === doc.id ? 'Classifying...' : 'Classify'}
                                     </button>
                                 </div>
                             );
                         })}
+                        {provenanceDoc && (
+                            <DocumentProvenancePanel
+                                caseId={activeCaseId}
+                                document={provenanceDoc}
+                                onClose={function() { setProvenanceDoc(null); }}
+                            />
+                        )}
                     </div>
 
                     <div className="bg-white rounded-lg shadow p-6 mb-6">

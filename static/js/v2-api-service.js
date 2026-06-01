@@ -158,6 +158,15 @@
             return parseJsonResponse(response);
         },
 
+        getDocumentDetail: async function(caseId, documentId) {
+            const token = window.V2ApiService.getToken();
+            const response = await fetch(
+                '/cases/' + caseId + '/documents/' + documentId,
+                { headers: { 'Authorization': 'Bearer ' + token } }
+            );
+            return response.json();
+        },
+
         listDocumentVersions: async function(caseId, documentId) {
             const response = await window.fetch(
                 '/cases/' + caseId + '/documents/' + documentId + '/versions',
