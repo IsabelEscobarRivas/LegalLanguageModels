@@ -669,9 +669,6 @@ function ProvenanceInspector({ section, traces, kbGuidanceApplied, kbTraceCount,
 }
 
 function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
-    React.useEffect(function() {
-        alert('DraftReviewScreen mounted: caseId=' + caseId + ' draftId=' + draftId);
-    }, []);
     const [draft, setDraft] = useState(null);
     const [reviewStatus, setReviewStatus] = useState(null);
     const [exportHistory, setExportHistory] = useState([]);
@@ -1836,7 +1833,6 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
                                         onClick={function() {
                                             var sid = draft.draft_id || draft.id;
                                             var cid = activeCaseId;
-                                            alert('Review clicked: caseId=' + cid + ' draftId=' + sid);
                                             onReviewDraft(sid, cid, localVisaType || visaType || 'EB2');
                                         }}
                                         className="bg-[#1a365d] text-white px-3 py-1 rounded text-sm"
