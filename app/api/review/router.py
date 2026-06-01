@@ -17,7 +17,7 @@ from app.core.models import (
     DraftSectionReview,
     GenerationTrace,
 )
-from app.generation.service import SECTION_ORDER, _generate_section
+from app.generation.service import SECTION_ORDER, _build_section_order, _generate_section
 
 
 logger = logging.getLogger(__name__)
@@ -261,7 +261,14 @@ def get_review_status(
 
     active = _active_sections_by_code(db, draft_id)
     sections = [_section_review_summary(db, s) for s in active.values()]
-    sections.sort(key=lambda s: SECTION_ORDER.index(s["section_code"]))
+    section_order = _build_section_order(db, draft.visa_type, case_id)
+    order_index = {code: idx for idx, code in enumerate(section_order)}
+    sections.sort(
+        key=lambda s: (
+            order_index.get(s["section_code"], len(section_order)),
+            active[s["section_code"]].created_at,
+        )
+    )
 
     return {
         "draft_id": draft_id,
