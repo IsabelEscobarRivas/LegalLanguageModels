@@ -166,16 +166,33 @@ def _extract_docx(file_bytes: bytes) -> ExtractionResult:
 def _extract_pdf(file_bytes: bytes) -> ExtractionResult:
     text, page_count = _try_pypdf2(file_bytes)
     if text.strip():
-        return ExtractionResult(
-            text=text, method="pypdf2", status="completed", page_count=page_count
+        # Assess integrity before committing to PyPDF2 result
+        candidate = ExtractionResult(
+            text=text,
+            method="pypdf2",
+            status="completed",
+            page_count=page_count,
+        )
+        integrity = assess_extraction_integrity(candidate, file_bytes)
+        if integrity["integrity_status"] != "failed_corruption":
+            # PyPDF2 result is good — return it
+            return candidate
+        # Corruption detected — fall through to OCR
+        logger.warning(
+            "PyPDF2 text failed corruption check "
+            "(text_density=%.3f) — falling through to OCR",
+            integrity["text_density"],
         )
 
+    # Textract path (handles missing text, not corrupt text)
     text = _try_textract(file_bytes)
     if text.strip():
         return ExtractionResult(
-            text=text, method="textract", status="completed", page_count=page_count
+            text=text, method="textract",
+            status="completed", page_count=page_count
         )
 
+    # OCR path (handles both missing and corrupt text)
     text, ocr_pages = _try_ocr(file_bytes)
     if text.strip():
         return ExtractionResult(
@@ -185,7 +202,9 @@ def _extract_pdf(file_bytes: bytes) -> ExtractionResult:
             page_count=ocr_pages or page_count,
         )
 
-    return ExtractionResult(text="", method=None, status="failed", page_count=page_count)
+    return ExtractionResult(
+        text="", method=None, status="failed", page_count=page_count
+    )
 
 
 def _try_pypdf2(file_bytes: bytes) -> tuple[str, Optional[int]]:
