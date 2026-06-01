@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import uuid
 from typing import Optional
 
@@ -15,6 +16,7 @@ from app.core.models import (
     DraftOutput,
     DraftSection,
     KBGuidanceTrace,
+    PromptTemplate,
     SectionAffinityReference,
 )
 from app.generation.coverage_gate import check_coverage_gate
@@ -32,7 +34,7 @@ GENERATION_MODEL = os.environ.get("GENERATION_MODEL", "gpt-4o")
 GENERATION_MODEL_VERSION = os.environ.get("GENERATION_MODEL_VERSION", "1.0")
 EVIDENCE_TOP_K = int(os.environ.get("EVIDENCE_TOP_K", 5))
 
-SECTION_ORDER = [
+_LEGACY_SECTION_ORDER = [
     "background",
     "experience",
     "expert_opinion",
@@ -40,6 +42,158 @@ SECTION_ORDER = [
     "impact",
     "conclusion",
 ]
+
+# Backward compatibility for callers not yet migrated to _build_section_order.
+SECTION_ORDER = _LEGACY_SECTION_ORDER
+
+
+def _build_section_order(db: Session, visa_type: str, case_id: str) -> list[str]:
+    """Build the ordered list of section codes for this draft.
+
+    Order:
+      1. Structural sections (no prong): introduction, statement_of_law,
+         advanced_degree_qualification
+      2. Prong 1 sections in display_order
+      3. Prong 2 sections in display_order (excluding expert opinion base)
+      4. Dynamic expert opinion sections — one per classified expert document
+      5. Prong 3 sections in display_order
+      6. Conclusion: petition_conclusion
+
+    Falls back to old SECTION_ORDER if no new templates exist (backward compat).
+    Never raises.
+    """
+    try:
+        new_templates = (
+            db.query(PromptTemplate)
+            .filter(
+                PromptTemplate.visa_type == visa_type,
+                PromptTemplate.is_active.is_(True),
+                PromptTemplate.section_code == "introduction",
+            )
+            .first()
+        )
+
+        if new_templates is None:
+            return list(_LEGACY_SECTION_ORDER)
+
+        structural = [
+            "introduction",
+            "statement_of_law",
+            "advanced_degree_qualification",
+        ]
+
+        prong1 = [
+            "prong1_endeavor_description",
+            "prong1_substantial_merit",
+            "prong1_national_importance_welfare",
+            "prong1_national_importance_initiative",
+        ]
+
+        prong2_static = [
+            "prong2_educational_background",
+            "prong2_certifications_licensure",
+            "prong2_lectures_presentations",
+            "prong2_professional_experience",
+            "prong2_professional_memberships",
+            "prong2_peer_recognition",
+        ]
+
+        expert_sections = _discover_expert_sections(db, case_id, visa_type)
+
+        prong3 = [
+            "prong3_endeavor_flexibility",
+            "prong3_public_interest",
+            "prong3_labor_market_shortage",
+            "prong3_no_adverse_effect",
+            "prong3_economic_benefit",
+        ]
+
+        conclusion = ["petition_conclusion"]
+
+        return (
+            structural
+            + prong1
+            + prong2_static
+            + expert_sections
+            + prong3
+            + conclusion
+        )
+
+    except Exception:
+        logger.exception("_build_section_order failed — using fallback")
+        return list(_LEGACY_SECTION_ORDER)
+
+
+def _discover_expert_sections(
+    db: Session, case_id: str, visa_type: str
+) -> list[str]:
+    """Find expert opinion documents classified for this case and return
+    dynamic section codes in the format prong2_expert_opinion_{slug}.
+
+    Looks for ClassificationResult rows where section_affinity code is
+    'prong2_expert_opinion_base' or 'expert_opinion' (old code).
+    Extracts expert name from source Document.original_name.
+    Returns deduplicated list of dynamic section codes.
+    Never raises.
+    """
+    try:
+        results = (
+            db.query(Document.original_name)
+            .join(DocumentVersion, DocumentVersion.document_id == Document.id)
+            .join(Chunk, Chunk.document_version_id == DocumentVersion.id)
+            .join(
+                ClassificationResult,
+                ClassificationResult.chunk_id == Chunk.id,
+            )
+            .join(
+                SectionAffinityReference,
+                SectionAffinityReference.id
+                == ClassificationResult.section_affinity_id,
+            )
+            .filter(
+                ClassificationResult.case_id == case_id,
+                SectionAffinityReference.code.in_([
+                    "prong2_expert_opinion_base",
+                    "expert_opinion",
+                ]),
+                Document.retrieval_eligible.is_(True),
+                Document.generation_eligible.is_(True),
+            )
+            .distinct()
+            .all()
+        )
+
+        seen = set()
+        sections = []
+        prefix = "prong2_expert_opinion_"
+        max_slug_len = 50 - len(prefix)
+        for (original_name,) in results:
+            name = re.sub(r"\.[^.]+$", "", original_name)
+            slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+            slug = slug[:max_slug_len]
+            code = f"{prefix}{slug}"
+            if code not in seen:
+                seen.add(code)
+                sections.append(code)
+
+        return sections
+
+    except Exception:
+        logger.exception("_discover_expert_sections failed")
+        return []
+
+
+def _resolve_evidence_section_codes(section_code: str) -> list[str]:
+    """Map a section code to the evidence section affinity codes to query.
+
+    Dynamic expert opinion sections query both the new base code and
+    the old code for backward compatibility.
+    Static new codes query only themselves.
+    Old codes query only themselves.
+    """
+    if section_code.startswith("prong2_expert_opinion_"):
+        return ["prong2_expert_opinion_base", "expert_opinion"]
+    return [section_code]
 
 
 def generate_draft(
@@ -103,7 +257,8 @@ def generate_draft(
         db.refresh(draft)
 
         sections_so_far: list[dict] = []
-        for section_code in SECTION_ORDER:
+        section_order = _build_section_order(db, visa_type, case_id)
+        for section_code in section_order:
             section_result = _generate_section(
                 db=db,
                 draft_output_id=draft.id,
@@ -156,6 +311,8 @@ def _generate_section(
     """Generate one section. Returns section dict or None on failure."""
     try:
         template = get_active_template(db, visa_type, section_code)
+        if template is None and section_code.startswith("prong2_expert_opinion_"):
+            template = get_active_template(db, visa_type, "prong2_expert_opinion_base")
         if template is None:
             logger.error(
                 "No active template for visa_type=%s section_code=%s",
@@ -164,14 +321,17 @@ def _generate_section(
             )
             return None
 
-        if section_code == "conclusion":
+        if section_code in ("conclusion", "petition_conclusion"):
             evidence_results: list[dict] = []
         else:
             evidence_results = _fetch_section_evidence(
                 db, case_id, section_code, visa_type
             )
 
-        if section_code != "conclusion" and not evidence_results:
+        if (
+            section_code not in ("conclusion", "petition_conclusion")
+            and not evidence_results
+        ):
             logger.warning(
                 "No evidence for section %s in case %s — returning sentinel",
                 section_code,
@@ -224,6 +384,14 @@ def _generate_section(
             "coverage_summary": str(coverage_summary),
             "section_summaries": _format_prior_sections(prior_sections),
         }
+        if section_code.startswith("prong2_expert_opinion_"):
+            expert_name = "the expert"
+            if evidence_results:
+                src = evidence_results[0].get("source_document", "")
+                name = re.sub(r"\.[^.]+$", "", src)
+                name = re.sub(r"[-_]+", " ", name).strip()
+                expert_name = name if name else "the expert"
+            variables["expert_name"] = expert_name
         if kb_guidance:
             variables["kb_examples"] = kb_guidance
 
@@ -326,7 +494,9 @@ def _fetch_section_evidence(
         .join(Document, Document.id == DocumentVersion.document_id)
         .filter(
             ClassificationResult.case_id == case_id,
-            SectionAffinityReference.code == section_code,
+            SectionAffinityReference.code.in_(
+                _resolve_evidence_section_codes(section_code)
+            ),
             Document.retrieval_eligible.is_(True),
             Document.generation_eligible.is_(True),
         )

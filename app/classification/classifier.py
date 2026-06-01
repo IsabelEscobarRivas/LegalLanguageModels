@@ -44,12 +44,34 @@ CLASSIFICATION_CONFIDENCE_THRESHOLD = float(
 
 _VALID_SECTION_AFFINITY_CODES = frozenset(
     {
+        # Original 6 — preserved for backward compatibility
         "background",
         "experience",
         "expert_opinion",
         "achievements",
         "impact",
         "conclusion",
+        # New petition architecture codes
+        "introduction",
+        "statement_of_law",
+        "advanced_degree_qualification",
+        "prong1_endeavor_description",
+        "prong1_substantial_merit",
+        "prong1_national_importance_welfare",
+        "prong1_national_importance_initiative",
+        "prong2_educational_background",
+        "prong2_certifications_licensure",
+        "prong2_lectures_presentations",
+        "prong2_professional_experience",
+        "prong2_professional_memberships",
+        "prong2_peer_recognition",
+        "prong2_expert_opinion_base",
+        "prong3_endeavor_flexibility",
+        "prong3_public_interest",
+        "prong3_labor_market_shortage",
+        "prong3_no_adverse_effect",
+        "prong3_economic_benefit",
+        "petition_conclusion",
     }
 )
 
@@ -75,19 +97,59 @@ Respond ONLY with valid JSON matching this exact schema:
   "supports": boolean,
   "confidence": float between 0.0 and 1.0,
   "rationale": "one or two sentence explanation",
-  "section_affinity": one of: "background", "experience", "expert_opinion", "achievements", "impact", "conclusion",
+  "section_affinity": one of the valid section affinity codes listed below,
   "citation_text": "the single most probative sentence or phrase from the text that supports this criterion, or null if supports is false"
 }
 
 Section affinity rules — apply these in order:
-- background: Use for academic credentials, degrees, educational history, training, certifications, bar admissions, or professional memberships that establish the petitioner's foundational qualifications. Also use for content that describes who the petitioner is rather than what they have accomplished.
-- experience: Use for employment history, job roles, professional responsibilities, and work-based accomplishments that are not academic in nature.
-- expert_opinion: Use for third-party evaluations, recommendation letters, expert declarations, or assessments written by someone other than the petitioner about the petitioner.
-- achievements: Use for awards, publications, citations, rankings, competitive recognitions, or measurable outputs that demonstrate exceptional standing.
-- impact: Use for evidence of national interest, field-wide influence, policy impact, or benefit to the United States.
-- conclusion: Use for summary statements, petitioner-authored declarations of intent, or forward-looking professional plans.
+- background: Use for academic credentials, degrees, educational history,
+  training, certifications, bar admissions, or professional memberships
+  that establish the petitioner's foundational qualifications.
+- prong2_educational_background: Prefer over background for degree
+  credentials, academic transcripts, and credential evaluations.
+- prong2_certifications_licensure: Use for professional certifications,
+  bar admissions, licenses, and professional registrations.
+- prong2_lectures_presentations: Use for conference presentations,
+  published research, authored works, and scientific contributions.
+- experience: Use for employment history and work-based accomplishments.
+- prong2_professional_experience: Prefer over experience for role-by-role
+  employment records with specific achievements.
+- prong2_professional_memberships: Use for professional organization
+  memberships and association records.
+- expert_opinion: Use for third-party expert opinion letters and
+  evaluations written by someone other than the petitioner.
+- prong2_expert_opinion_base: Prefer over expert_opinion for expert
+  opinion letters in EB-2 NIW petitions.
+- prong2_peer_recognition: Use for letters of support and recommendation
+  from colleagues, supervisors, and industry peers (not formal expert
+  opinion letters).
+- achievements: Use for awards, publications, citations, rankings,
+  or competitive recognitions.
+- impact: Use for evidence of national interest, field-wide influence,
+  or policy impact.
+- prong1_substantial_merit: Prefer over impact for field significance
+  arguments and professional association priorities.
+- prong1_national_importance_welfare: Use for federal agency reports
+  on population impact, health disparities, or economic burden.
+- prong1_national_importance_initiative: Use for named federal programs,
+  executive orders, and agency strategic plans.
+- prong1_endeavor_description: Use for professional plans describing
+  the petitioner's proposed work in the United States.
+- prong3_labor_market_shortage: Use for labor market data, BLS reports,
+  and workforce shortage documentation.
+- prong3_no_adverse_effect: Use for arguments that the petitioner
+  fills a gap rather than displacing US workers.
+- prong3_economic_benefit: Use for economic impact data and cost
+  arguments supporting the waiver.
+- conclusion: Use for summary statements and forward-looking plans.
+- petition_conclusion: Prefer over conclusion for EB-2 NIW petition
+  conclusion arguments.
 
-When classifying content about academic degrees, advanced training, or professional credentials (e.g. JD, PhD, bar admissions, licensed memberships), prefer background over experience even if the credential was obtained through professional work.
+When classifying content about academic degrees, advanced training, or
+professional credentials, prefer prong2_educational_background over
+background. When classifying expert opinion letters, prefer
+prong2_expert_opinion_base over expert_opinion. When classifying
+professional plan documents, prefer prong1_endeavor_description.
 
 If the text does not support the criterion, set supports=false, confidence=0.0, and citation_text=null.
 citation_text must be an exact quote or very close paraphrase of a specific passage from the provided text.
