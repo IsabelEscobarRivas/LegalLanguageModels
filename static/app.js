@@ -551,15 +551,6 @@ const DocumentIngestion = ({ caseId, setCaseId, visaType, setVisaType }) => {
     );
 };
 
-const SECTION_ORDER = [
-    'background',
-    'experience',
-    'expert_opinion',
-    'achievements',
-    'impact',
-    'conclusion',
-];
-
 const SECTION_LABELS = {
     background: 'Background',
     experience: 'Experience',
@@ -697,17 +688,16 @@ function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
             if (token) {
                 headers['Authorization'] = 'Bearer ' + token;
             }
-            const draftResponse = await fetch(
-                '/cases/' + caseId + '/drafts/' + draftId,
-                { headers: headers }
-            );
+            const draftUrl = '/cases/' + caseId + '/drafts/' + draftId;
+            const draftResponse = await fetch(draftUrl, { headers: headers });
+            const draftText = await draftResponse.text();
+            console.log('Draft response status:', draftResponse.status);
+            console.log('Draft response first 200 chars:', draftText.substring(0, 200));
             if (!draftResponse.ok) {
-                const text = await draftResponse.text();
-                console.error('Draft load failed:', draftResponse.status, text);
+                console.error('Draft load failed:', draftResponse.status, draftText);
                 setError('Failed to load draft: ' + draftResponse.status);
                 return;
             }
-            const draftText = await draftResponse.text();
             let draftData;
             try {
                 draftData = JSON.parse(draftText);
@@ -742,16 +732,7 @@ function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
         });
     }
 
-    const sectionsByCode = {};
-    if (draft && draft.sections) {
-        draft.sections.forEach(function(s) {
-            sectionsByCode[s.section_code] = s;
-        });
-    }
-
-    const orderedSections = SECTION_ORDER.map(function(code) {
-        return sectionsByCode[code];
-    }).filter(Boolean);
+    const orderedSections = (draft && draft.sections) ? draft.sections : [];
 
     const handleApprove = async function(sectionId) {
         try {
