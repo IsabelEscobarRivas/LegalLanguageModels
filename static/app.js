@@ -692,7 +692,33 @@ function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
         setLoading(true);
         setError('');
         try {
-            const draftData = await window.V2ApiService.getDraft(caseId, draftId);
+            const token = window.V2ApiService.getToken();
+            const headers = {};
+            if (token) {
+                headers['Authorization'] = 'Bearer ' + token;
+            }
+            const draftResponse = await fetch(
+                '/cases/' + caseId + '/drafts/' + draftId,
+                { headers: headers }
+            );
+            if (!draftResponse.ok) {
+                const text = await draftResponse.text();
+                console.error('Draft load failed:', draftResponse.status, text);
+                setError('Failed to load draft: ' + draftResponse.status);
+                return;
+            }
+            const draftText = await draftResponse.text();
+            let draftData;
+            try {
+                draftData = JSON.parse(draftText);
+            } catch (parseErr) {
+                console.error('Draft JSON parse failed:', parseErr, draftText);
+                setError(
+                    'Failed to parse draft response: ' + parseErr.message +
+                    '\n\nRaw response:\n' + draftText.slice(0, 500)
+                );
+                return;
+            }
             const statusData = await window.V2ApiService.getReviewStatus(caseId, draftId);
             const exportData = await window.V2ApiService.getExports(caseId, draftId);
             setDraft(draftData);
@@ -1430,9 +1456,15 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
 
     const handleIngestKB = async function(kbDocumentId) {
         try {
-            await window.V2ApiService.ingestKBDocument(kbDocumentId);
-            setMessage('KB ingestion queued.');
-            await loadState();
+            const result = await window.V2ApiService.ingestKBDocument(kbDocumentId);
+            if (result.status === 'queued' || result.job_id) {
+                setMessage('KB document queued for ingestion. Refresh in a moment to see updated status.');
+            } else if (result.lifecycle_state === 'indexed') {
+                setMessage('KB document indexed successfully.');
+            } else {
+                setMessage('Ingest response: ' + JSON.stringify(result));
+            }
+            loadState();
         } catch (err) {
             setMessage('KB ingest failed: ' + err.message);
         }
