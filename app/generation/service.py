@@ -51,6 +51,7 @@ ALWAYS_GENERATE_SECTIONS = {
     "petition_conclusion",
     "introduction",
     "statement_of_law",
+    "advanced_degree_qualification",
 }
 
 
