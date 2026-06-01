@@ -326,6 +326,14 @@
             return parseJsonResponse(response);
         },
 
+        listKBDocuments: async function() {
+            const response = await window.fetch(
+                '/kb/documents',
+                { method: 'GET', headers: authHeaders() }
+            );
+            return parseJsonResponse(response);
+        },
+
         // Draft
         getDraft: async function(caseId, draftId) {
             const response = await window.fetch(

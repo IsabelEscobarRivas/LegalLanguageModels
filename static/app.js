@@ -1443,14 +1443,38 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
     const handleIngestKB = async function(kbDocumentId) {
         try {
             const result = await window.V2ApiService.ingestKBDocument(kbDocumentId);
-            if (result.status === 'queued' || result.job_id) {
-                setMessage('KB document queued for ingestion. Refresh in a moment to see updated status.');
-            } else if (result.lifecycle_state === 'indexed') {
+            if (result && (result.status === 'queued' || result.job_id)) {
+                setMessage('KB document queued for ingestion. Checking status...');
+                var attempts = 0;
+                var poll = setInterval(async function() {
+                    attempts++;
+                    try {
+                        var docs = await window.V2ApiService.listKBDocuments();
+                        var doc = (docs || []).find(function(d) {
+                            return d.id === kbDocumentId ||
+                                   d.kb_document_id === kbDocumentId;
+                        });
+                        if (doc && doc.lifecycle_state === 'indexed') {
+                            clearInterval(poll);
+                            setMessage('KB document indexed successfully.');
+                            await loadState();
+                        } else if (attempts >= 20) {
+                            clearInterval(poll);
+                            setMessage('Ingestion is taking longer than expected. Refresh to check status.');
+                            await loadState();
+                        }
+                    } catch(e) {
+                        clearInterval(poll);
+                        await loadState();
+                    }
+                }, 3000);
+            } else if (result && result.lifecycle_state === 'indexed') {
                 setMessage('KB document indexed successfully.');
+                await loadState();
             } else {
                 setMessage('Ingest response: ' + JSON.stringify(result));
+                await loadState();
             }
-            loadState();
         } catch (err) {
             setMessage('KB ingest failed: ' + err.message);
         }
