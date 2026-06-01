@@ -46,6 +46,13 @@ _LEGACY_SECTION_ORDER = [
 # Backward compatibility for callers not yet migrated to _build_section_order.
 SECTION_ORDER = _LEGACY_SECTION_ORDER
 
+ALWAYS_GENERATE_SECTIONS = {
+    "conclusion",
+    "petition_conclusion",
+    "introduction",
+    "statement_of_law",
+}
+
 
 def _build_section_order(db: Session, visa_type: str, case_id: str) -> list[str]:
     """Build the ordered list of section codes for this draft.
@@ -320,17 +327,14 @@ def _generate_section(
             )
             return None
 
-        if section_code in ("conclusion", "petition_conclusion"):
+        if section_code in ALWAYS_GENERATE_SECTIONS:
             evidence_results: list[dict] = []
         else:
             evidence_results = _fetch_section_evidence(
                 db, case_id, section_code, visa_type
             )
 
-        if (
-            section_code not in ("conclusion", "petition_conclusion")
-            and not evidence_results
-        ):
+        if section_code not in ALWAYS_GENERATE_SECTIONS and not evidence_results:
             logger.warning(
                 "No evidence for section %s in case %s — returning sentinel",
                 section_code,
