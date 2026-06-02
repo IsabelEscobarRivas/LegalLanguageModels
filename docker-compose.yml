@@ -36,8 +36,10 @@ services:
     build: .
     command: >
       sh -c "python -m arq app.workers.settings.WorkerSettings"
+    volumes:
+      - .:/app
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/documents_db}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:password@db:5432/documents_db}
       REDIS_URL: redis://redis:6379
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}

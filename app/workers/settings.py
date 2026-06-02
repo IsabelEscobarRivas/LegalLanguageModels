@@ -2,6 +2,12 @@
 import os
 from arq.connections import RedisSettings
 
+from app.workers.tasks import (
+    classify_document_version,
+    ingest_document,
+    ingest_kb_document,
+)
+
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 
 # Parse redis://host:port
@@ -14,9 +20,9 @@ REDIS_SETTINGS = RedisSettings(host=REDIS_HOST, port=REDIS_PORT)
 
 class WorkerSettings:
     functions = [
-        "app.workers.tasks.ingest_document",
-        "app.workers.tasks.ingest_kb_document",
-        "app.workers.tasks.classify_document_version",
+        ingest_document,
+        ingest_kb_document,
+        classify_document_version,
     ]
     redis_settings = REDIS_SETTINGS
     max_jobs = 10
