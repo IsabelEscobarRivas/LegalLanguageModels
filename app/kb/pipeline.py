@@ -19,7 +19,11 @@ import logging
 import os
 import uuid
 from datetime import datetime
+from io import BytesIO
 from typing import Optional
+
+import PyPDF2
+from docx import Document as DocxDocument
 
 import openai
 from sqlalchemy.orm import Session
@@ -92,19 +96,36 @@ def chunk_kb_document(db: Session, kb_document_id: str, firm_id: str) -> dict:
         if existing_count > 0:
             return {"status": "exists", "chunks_created": existing_count}
 
-        # Fetch text from S3
+        # Fetch from S3 and extract text (format-aware)
+        response = _s3_client().get_object(Bucket=_bucket(), Key=kb_doc.s3_key)
+        raw_bytes = response["Body"].read()
+        filename = kb_doc.s3_key.rsplit("/", 1)[-1] if kb_doc.s3_key else ""
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
         try:
-            response = _s3_client().get_object(Bucket=_bucket(), Key=kb_doc.s3_key)
-            raw_bytes = response["Body"].read()
-            text = raw_bytes.decode("utf-8", errors="replace")
+            if ext == "docx":
+                doc = DocxDocument(BytesIO(raw_bytes))
+                text = "\n".join(
+                    p.text for p in doc.paragraphs if p.text.strip()
+                )
+            elif ext == "pdf":
+                reader = PyPDF2.PdfReader(BytesIO(raw_bytes))
+                text = "\n".join(
+                    page.extract_text() or "" for page in reader.pages
+                )
+            else:
+                text = raw_bytes.decode("utf-8", errors="replace")
         except Exception as exc:
             _write_kb_event(
                 db, "kb_chunking_failed", "failed",
                 kb_document_id, firm_id,
-                {"reason": "s3_fetch_failed"},
+                {"reason": "extraction_failed"},
                 error_message=str(exc),
             )
-            return {"status": "failed", "reason": "s3_fetch_failed"}
+            return {"status": "failed", "reason": "extraction_failed"}
+
+        # Strip NUL bytes defensively before chunking
+        text = text.replace("\x00", "")
 
         if not text.strip():
             _write_kb_event(
