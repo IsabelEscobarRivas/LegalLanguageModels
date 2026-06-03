@@ -1,10 +1,12 @@
 # ADR-008: Taxonomy-Aware Knowledge Base Retrieval
 
-**Status:** Accepted
+**Status:** Superseded
 **Date:** 2026-05-26
 **Supersedes:** N/A
-**Superseded by:** N/A
+**Superseded by:** [ADR-014](ADR-014-rag-2-template-driven-generation-architecture.md) (RAG 2 Template-Driven Generation Architecture)
 **Extends:** ADR-007 (Knowledge Base as Parallel RAG Pipeline)
+
+> **Note:** Generation-time KB retrieval on `kb_chunks` with `document_type` / section-key filtering is superseded by template-driven retrieval on `kb_templates` per ADR-014. This ADR remains authoritative for the historical rationale behind taxonomy-aware filtering.
 
 ## Context
 
