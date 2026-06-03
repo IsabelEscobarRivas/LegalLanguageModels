@@ -1048,6 +1048,7 @@ class KBTemplate(Base):
     argument_sequence = Column(JSONB, nullable=True)
     tone_guidance = Column(Text, nullable=True)
     confidence = Column(Float, nullable=True)
+    embedding = Column(Vector(EMBEDDING_DIMENSIONS), nullable=True)
     extraction_prompt_version = Column(
         String(20),
         nullable=False,

@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 EXTRACTION_PROMPT_VERSION = "1.0"
 EXTRACTION_MODEL = os.environ.get("GENERATION_MODEL", "gpt-4o")
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
+EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", 1536))
 
 SECTION_EXTRACTION_PROMPTS = {
     "introduction": "Extract the reusable Introduction drafting pattern. Preserve rhetorical sequence, formal opening, petition identification, preview of Dhanasar prongs. Replace all facts with placeholders such as [EVIDENCE: petitioner identity], [EVIDENCE: proposed endeavor], [EVIDENCE: prong summary].",
@@ -141,6 +143,20 @@ def extract_kb_template(
             extraction_prompt_version=EXTRACTION_PROMPT_VERSION,
             created_at=datetime.utcnow(),
         )
+        try:
+            embed_response = client.embeddings.create(
+                input=parsed.get("template_text", ""),
+                model=EMBEDDING_MODEL,
+                dimensions=EMBEDDING_DIMENSIONS,
+            )
+            template.embedding = embed_response.data[0].embedding
+        except Exception as embed_exc:
+            logger.warning(
+                "extract_kb_template embedding failed chunk=%s: %s",
+                kb_chunk_id, embed_exc,
+            )
+            # Continue without embedding — template still useful for
+            # section-key lookup, embedding can be backfilled later
         db.add(template)
         db.commit()
 
