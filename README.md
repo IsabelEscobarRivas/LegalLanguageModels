@@ -1,148 +1,74 @@
-# Immigration Document Intelligence System
-### AI-Powered Document Processing for EB1 & EB2 Visa Applications
+# PolicyPulse
 
-> A production-grade, multi-tenant platform that applies LLMs and RAG to automate document classification, extraction, and retrieval for U.S. immigration law firms — built in two iterations from prototype to enterprise architecture.
+Regulatory intelligence monitor for USCIS policy content.
 
----
-
-## What This Project Does
-
-Immigration attorneys processing EB1 and EB2 visa applications deal with hundreds of unstructured documents per case — recommendation letters, published research, employment records, awards, and more. Each document must be correctly classified against USCIS evidentiary criteria before it can be used in a petition.
-
-This system automates that process using LLMs and Retrieval-Augmented Generation (RAG), turning a manual, error-prone workflow into an intelligent pipeline that:
-
-- **Classifies** uploaded documents against EB1/EB2 USCIS criteria automatically
-- **Extracts** structured data from unstructured PDFs and DOCX files
-- **Retrieves** the most relevant precedent documents for a given case using semantic search
-- **Scales** across multiple law firms with full data isolation per tenant
+PolicyPulse retrieves, normalizes, and persists USCIS regulatory content using Bright Data APIs.
 
 ---
 
-## Architecture Evolution: V1 → V2
+## Setup
 
-This repository tells the story of a system built iteratively — from a working prototype to a production-ready platform.
+1. Clone the repository and create a virtual environment:
 
-### V1 — Prototype (`/v1`)
-*Single-tenant document ingestion and RAG pipeline*
-
-The first version established the core intelligence layer:
-
-- **FastAPI** backend with S3 document storage
-- **LLM-powered text extraction** from PDFs and DOCX files
-- **Custom RAG implementation** (`ket_rag/`) for semantic document retrieval
-- **EB1/EB2 taxonomy** encoded as structured enums aligned to USCIS criteria
-- React/HTML frontend for case and document management
-
-The RAG corpus is built per-case, with similarity-based chunking that creates semantic connections between related documents. This was the foundation for understanding how immigration documents relate to one another within a visa petition.
-
-**Tech stack:** Python · FastAPI · SQLAlchemy · AWS S3 · Custom RAG · HTML/JS frontend
-
----
-
-### V2 — Production Architecture (`/v2`)
-*Multi-tenant, role-based enterprise platform*
-
-V2 re-architected the system from the ground up for real-world law firm deployment:
-
-**Multi-tenancy**
-- Full data isolation per law firm via `law_firm_id` on every database table
-- One deployment serves many firms; no firm can access another's data or knowledge base
-- Firm-scoped RAG corpora — each firm's system gets smarter with their own data over time
-
-**Security & Permissions**
-- JWT authentication with role-based access control
-- Permission hierarchy: `Paralegal < Associate < Partner < Admin`
-- All API endpoints enforce both authentication and tenant scoping
-
-**Clean Architecture**
-- Separated into Domain, Application, and Infrastructure layers
-- 47/47 tests passing across domain logic and security validation
-- SQLite for development; PostgreSQL-ready for production
-
-**Competitive Moat by Design**
-- Each firm accumulates a proprietary knowledge base from their own successful petitions
-- Letter generation uses firm-specific RAG + firm-uploaded templates
-- Success tracking feeds back into continuous learning per firm
-
-**Tech stack:** Python · FastAPI · SQLAlchemy · JWT · PostgreSQL · Multi-tenant RAG · Role-based access control
-
----
-
-## Key Technical Highlights
-
-| Capability | Implementation |
-|---|---|
-| Document ingestion | PDF + DOCX parsing with LLM-assisted extraction |
-| Document classification | LLM classification against USCIS EB1/EB2 criteria taxonomy |
-| Semantic retrieval | Custom RAG with similarity-based chunk connections |
-| Multi-tenancy | Row-level isolation, firm-scoped knowledge bases |
-| Auth | JWT tokens with 4-tier RBAC |
-| Test coverage | 47/47 tests (domain + security) |
-| Storage | AWS S3 for documents, SQL for metadata |
-
----
-
-## Why This Matters for AI/Data Science Roles
-
-This project reflects the kind of applied AI engineering work that produces real-world impact:
-
-- **Messy, unstructured data at the source** — immigration documents are inconsistently formatted, multilingual, and legally precise. Getting LLMs to classify them reliably required domain-specific taxonomy design, not just off-the-shelf prompting.
-- **RAG in production** — the retrieval system needed to respect case boundaries, visa type hierarchies, and firm data isolation simultaneously.
-- **Iterative system design** — V1 proved the concept; V2 hardened it for deployment. Both are included because the progression shows engineering judgment, not just code.
-- **Domain expertise embedded in architecture** — the EB1/EB2 taxonomy, USCIS evidentiary categories, and firm-level knowledge accumulation are features born from deep domain understanding.
-
----
-
-## Repository Structure
-
-```
-/
-├── v1/                         # Prototype — single-tenant pipeline
-│   ├── app/
-│   │   ├── main.py             # FastAPI application
-│   │   ├── models.py           # Document + case data models
-│   │   ├── schemas.py          # EB1/EB2 taxonomy as Pydantic enums
-│   │   ├── ket_rag/            # Custom RAG implementation
-│   │   │   ├── corpus_builder.py
-│   │   │   └── core.py
-│   │   └── services/           # Business logic
-│   └── static/                 # Frontend (HTML/JS/CSS)
-│
-└── v2/                         # Production — multi-tenant enterprise
-    ├── domain/                 # Core business logic (tenant-agnostic)
-    ├── application/            # Use cases and orchestration
-    ├── infrastructure/         # DB, auth, external services
-    ├── api/                    # FastAPI routes (/api/v2/*)
-    └── tests/                  # 47 passing tests
-```
-
----
-
-## Running Locally
-
-### V1
 ```bash
-cd v1
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
-# API docs at http://localhost:8000/docs
 ```
 
-### V2
+2. Copy the environment template and fill in your values:
+
 ```bash
-cd v2
-pip install -r requirements.txt
-# Set environment variables (see .env.example)
-uvicorn main:app --reload
-# Auth: POST /auth/login
-# Docs: http://localhost:8000/docs
+cp .env.example .env
 ```
+
+3. Ensure PostgreSQL is reachable at the `DATABASE_URL` you configure (Supabase or local).
 
 ---
 
-## About
+## Environment Variables
 
-Built by **Isabel Escobar Rivas** as Product Owner and lead developer, working at the intersection of legal domain expertise and applied AI engineering.
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `BRIGHT_DATA_API_KEY` | Bright Data API key |
+| `BRIGHT_DATA_SERP_ZONE` | Bright Data SERP zone (default: `serp_api1`) |
+| `BRIGHT_DATA_UNLOCKER_ZONE` | Bright Data Web Unlocker zone (default: `web_unlocker1`) |
+| `ENVIRONMENT` | Runtime environment (`development`, `staging`, `production`) |
 
-- [LinkedIn](https://www.linkedin.com/in/isabelescobarr/)
-- [Portfolio](https://isabelescobarrivas.myportfolio.com/)
+See [`.env.example`](.env.example) for the full template.
+
+---
+
+## Running locally
+
+Start the development server:
+
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Health check:
+
+```bash
+curl http://localhost:8000/
+# {"status":"ok","service":"PolicyPulse"}
+```
+
+Interactive API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+---
+
+## Deployment
+
+PolicyPulse is configured for [Railway](https://railway.app/) via [`railway.toml`](railway.toml).
+
+1. Create a new Railway project and connect this repository.
+2. Set environment variables from `.env.example` in the Railway dashboard.
+3. Railway uses Nixpacks to build and runs:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port $PORT
+```
+
+Ensure `DATABASE_URL` points to your production PostgreSQL instance before deploying.
