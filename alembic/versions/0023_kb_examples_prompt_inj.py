@@ -1,7 +1,7 @@
 """Inject {{kb_examples}} block into prompt_templates user_prompts.
 
 Revision ID: 0023_kb_examples_prompt_inj
-Revises: 0020_petition_prompt_templates
+Revises: 0022_kb_templates_embedding
 Create Date: 2026-06-07
 
 Adds [KB STYLE GUIDANCE] block with {{kb_examples}} before Evidence blocks
@@ -13,7 +13,7 @@ from sqlalchemy import text
 
 
 revision = "0023_kb_examples_prompt_inj"
-down_revision = "0020_petition_prompt_templates"
+down_revision = "0022_kb_templates_embedding"
 branch_labels = None
 depends_on = None
 
