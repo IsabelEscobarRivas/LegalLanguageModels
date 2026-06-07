@@ -9,6 +9,7 @@ Mirrors the cumulative state after Alembic revisions:
   * 0007_sprint4_schema — citation_text, affinity defaults, generation tables
   * 0010_firm_id_propagation — firms table, cases.firm_id
   * 0011_kb_schema — kb_documents, kb_chunks, kb_embeddings, kb_guidance_traces
+  * 0021_kb_templates — kb_templates
 
 UUID primary keys are stored as String(36) for cross-DB compatibility.
 """
@@ -1018,6 +1019,50 @@ class KBEmbedding(Base):
         default=datetime.utcnow,
         server_default=func.now(),
     )
+
+
+class KBTemplate(Base):
+    __tablename__ = "kb_templates"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    kb_chunk_id = Column(
+        String(36),
+        ForeignKey(
+            "kb_chunks.id",
+            ondelete="RESTRICT",
+            name="fk_kb_templates_kb_chunk_id",
+        ),
+        nullable=False,
+        index=True,
+    )
+    firm_id = Column(
+        String(36),
+        ForeignKey("firms.id", ondelete="RESTRICT", name="fk_kb_templates_firm_id"),
+        nullable=False,
+        index=True,
+    )
+    visa_type = Column(String(50), nullable=False)
+    section_key = Column(String(100), nullable=False)
+    template_text = Column(Text, nullable=False)
+    evidence_placeholders = Column(JSONB, nullable=True)
+    argument_sequence = Column(JSONB, nullable=True)
+    tone_guidance = Column(Text, nullable=True)
+    confidence = Column(Float, nullable=True)
+    embedding = Column(Vector(EMBEDDING_DIMENSIONS), nullable=True)
+    extraction_prompt_version = Column(
+        String(20),
+        nullable=False,
+        default="1.0",
+        server_default="1.0",
+    )
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=func.now(),
+    )
+
+    kb_chunk = relationship("KBChunk", backref="templates")
 
 
 class KBGuidanceTrace(Base):
