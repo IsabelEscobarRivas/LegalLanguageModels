@@ -7,7 +7,6 @@ Workers validate firm_id on the task payload before executing.
 Registered tasks:
   - ingest_document: extract → chunk → embed for case documents
   - ingest_kb_document: extract → chunk → embed for KB documents
-  - extract_kb_templates: extract rhetorical templates from KB chunks
   - classify_document_version: classify all chunks for a version
 """
 import logging
@@ -15,7 +14,6 @@ import os
 
 from sqlalchemy.orm import Session
 
-from app.kb.extractor import extract_kb_template
 from app.core.database import SessionLocal
 from app.core.models import Document, KBDocument, Case
 
@@ -106,87 +104,6 @@ async def ingest_kb_document(
         return {"status": "failed", "reason": str(exc)}
     finally:
         db.close()
-
-
-async def extract_kb_templates(
-    ctx: dict,
-    firm_id: str,
-    kb_document_id: str,
-    visa_type: str,
-) -> dict:
-    """ARQ task: extract rhetorical templates from all chunks of a KB document.
-
-    Runs after ingest_kb_document completes. One KBTemplate per chunk
-    per section_key. Never raises.
-    """
-    db = None
-    try:
-        db = SessionLocal()
-
-        from app.core.models import KBChunk, KBDocument
-        from app.kb.extractor import SECTION_EXTRACTION_PROMPTS
-
-        kb_doc = (
-            db.query(KBDocument)
-            .filter(
-                KBDocument.id == kb_document_id,
-                KBDocument.firm_id == firm_id,
-                KBDocument.lifecycle_state == "indexed",
-            )
-            .first()
-        )
-        if kb_doc is None:
-            return {"status": "failed", "reason": "kb_document_not_found_or_not_indexed"}
-
-        chunks = (
-            db.query(KBChunk)
-            .filter(
-                KBChunk.kb_document_id == kb_document_id,
-                KBChunk.firm_id == firm_id,
-            )
-            .order_by(KBChunk.chunk_index.asc())
-            .all()
-        )
-        if not chunks:
-            return {"status": "failed", "reason": "no_chunks"}
-
-        section_keys = list(SECTION_EXTRACTION_PROMPTS.keys())
-
-        results = []
-        for chunk in chunks:
-            for section_key in section_keys:
-                result = extract_kb_template(
-                    db=db,
-                    kb_chunk_id=chunk.id,
-                    firm_id=firm_id,
-                    visa_type=visa_type,
-                    section_key=section_key,
-                )
-                results.append({
-                    "chunk_id": chunk.id,
-                    "section_key": section_key,
-                    "status": result.get("status"),
-                })
-
-        succeeded = sum(1 for r in results if r["status"] == "ok")
-        failed = sum(1 for r in results if r["status"] == "failed")
-
-        return {
-            "status": "ok",
-            "kb_document_id": kb_document_id,
-            "chunks_processed": len(chunks),
-            "templates_created": succeeded,
-            "failed": failed,
-        }
-
-    except Exception as exc:
-        logger.exception(
-            "extract_kb_templates failed kb_document_id=%s", kb_document_id
-        )
-        return {"status": "failed", "reason": str(exc)}
-    finally:
-        if db:
-            db.close()
 
 
 async def classify_document_version(

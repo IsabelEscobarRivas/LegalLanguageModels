@@ -4,7 +4,6 @@ from arq.connections import RedisSettings
 
 from app.workers.tasks import (
     classify_document_version,
-    extract_kb_templates,
     ingest_document,
     ingest_kb_document,
 )
@@ -23,7 +22,6 @@ class WorkerSettings:
     functions = [
         ingest_document,
         ingest_kb_document,
-        extract_kb_templates,
         classify_document_version,
     ]
     redis_settings = REDIS_SETTINGS
