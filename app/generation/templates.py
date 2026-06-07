@@ -110,12 +110,34 @@ def get_kb_style_guidance(
         return (None, [])
 
     allowed_types_by_section = {
-        "background": ["style_guide", "firm_convention"],
-        "experience": ["style_guide", "firm_convention"],
-        "achievements": ["style_guide", "firm_convention"],
-        "expert_opinion": ["style_guide"],
+        # Legacy section codes
+        "background": ["style_guide", "firm_convention", "precedent_letter"],
+        "experience": ["style_guide", "firm_convention", "precedent_letter"],
+        "achievements": ["style_guide", "firm_convention", "precedent_letter"],
+        "expert_opinion": ["style_guide", "precedent_letter"],
         "impact": ["style_guide", "firm_convention", "precedent_letter"],
         "conclusion": ["style_guide", "firm_convention", "precedent_letter"],
+        # NIW section codes
+        "introduction": ["style_guide", "firm_convention", "precedent_letter"],
+        "statement_of_law": ["style_guide", "firm_convention"],
+        "advanced_degree_qualification": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong1_endeavor_description": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong1_substantial_merit": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong1_national_importance_welfare": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong1_national_importance_initiative": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong2_educational_background": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong2_certifications_licensure": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong2_professional_experience": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong2_professional_memberships": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong2_lectures_presentations": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong2_peer_recognition": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong2_expert_opinion_base": ["style_guide", "precedent_letter"],
+        "prong3_endeavor_flexibility": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong3_public_interest": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong3_labor_market_shortage": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong3_no_adverse_effect": ["style_guide", "firm_convention", "precedent_letter"],
+        "prong3_economic_benefit": ["style_guide", "firm_convention", "precedent_letter"],
+        "petition_conclusion": ["style_guide", "firm_convention", "precedent_letter"],
     }
     allowed_types = allowed_types_by_section.get(section_code)
     if not allowed_types:
