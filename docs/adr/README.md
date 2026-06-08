@@ -19,6 +19,7 @@ ADRs record major architectural decisions, the rationale behind them, rejected a
 | [ADR-012](ADR-012-document-provenance-visibility.md) | Document Provenance Visibility | Proposed | 2026-05-31 |
 | [ADR-013](ADR-013-eb2-niw-petition-cognition-architecture.md) | EB-2 NIW Petition Cognition Architecture | Accepted | 2026-05-31 |
 | [ADR-014](ADR-014-rag-2-template-driven-generation-architecture.md) | RAG 2 Template-Driven Generation Architecture | Accepted | 2026-06-02 |
+| [ADR-015](ADR-015-compute-once-reuse-rag2.md) | Compute Once, Reuse Many — RAG 2 KB Template Deduplication | Accepted | 2026-06-07 |
 
 ## Conventions
 
