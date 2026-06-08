@@ -93,6 +93,28 @@ Output ONLY valid JSON — no preamble, no markdown, no explanation:
   "confidence": 0.0 to 1.0
 }"""
 
+ENTITY_DETECTION_SYSTEM_PROMPT = """You are a fact extractor for legal documents. Identify every specific fact in the provided text that is case-specific and must not appear in a reusable template. Output ONLY valid JSON, no preamble.
+
+Output format:
+{
+  "names": ["list of person names"],
+  "fields": ["list of professions, industries, fields of expertise"],
+  "institutions": ["list of organizations, companies, universities"],
+  "locations": ["list of countries, cities, places"],
+  "dates": ["list of dates, years, time periods"],
+  "credentials": ["list of degrees, certifications, licenses"],
+  "other_facts": ["any other specific facts"]
+}"""
+
+
+def _strip_json_fences(raw: str) -> str:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return raw.strip()
+
 
 def extract_kb_template(
     db: Session,
@@ -141,30 +163,61 @@ def extract_kb_template(
             return {"status": "failed", "reason": "missing_api_key"}
 
         client = openai.OpenAI(api_key=api_key)
+
+        entities = None
+        try:
+            entity_response = client.chat.completions.create(
+                model=EXTRACTION_MODEL,
+                temperature=0.0,
+                max_tokens=2000,
+                messages=[
+                    {"role": "system", "content": ENTITY_DETECTION_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Identify all case-specific facts in this text:\n{chunk.text}"
+                        ),
+                    },
+                ],
+            )
+            entity_raw = _strip_json_fences(
+                entity_response.choices[0].message.content
+            )
+            entities = json.loads(entity_raw)
+        except Exception as entity_exc:
+            logger.warning(
+                "extract_kb_template entity detection failed chunk=%s: %s "
+                "— falling back to single-step",
+                kb_chunk_id,
+                entity_exc,
+            )
+
+        if entities is not None:
+            user_content = (
+                f"SECTION: {section_key}\n"
+                f"SECTION DESCRIPTION: {section_prompt}\n\n"
+                f"FACTS TO REPLACE (replace ALL of these with [EVIDENCE: ...] placeholders):\n"
+                f"{json.dumps(entities, indent=2)}\n\n"
+                f"KB TEXT TO ABSTRACT:\n{chunk.text}"
+            )
+        else:
+            user_content = (
+                f"SECTION: {section_key}\n"
+                f"SECTION DESCRIPTION: {section_prompt}\n\n"
+                f"KB TEXT TO ABSTRACT:\n{chunk.text}"
+            )
+
         response = client.chat.completions.create(
             model=EXTRACTION_MODEL,
             temperature=0.0,
             max_tokens=2000,
             messages=[
                 {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"SECTION: {section_key}\n"
-                        f"SECTION DESCRIPTION: {section_prompt}\n\n"
-                        f"KB TEXT TO ABSTRACT:\n{chunk.text}"
-                    ),
-                },
+                {"role": "user", "content": user_content},
             ],
         )
 
-        raw = response.choices[0].message.content.strip()
-        # Strip markdown fences if present
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        raw = raw.strip()
+        raw = _strip_json_fences(response.choices[0].message.content)
 
         try:
             parsed = json.loads(raw)
