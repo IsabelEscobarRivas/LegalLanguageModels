@@ -53,22 +53,42 @@ SECTION_EXTRACTION_PROMPTS = {
     "petition_conclusion": "Extract the reusable Conclusion structure. Preserve sequencing asserting all three Dhanasar prongs, preponderance standard, and formal request for approval. Replace facts with placeholders.",
 }
 
-EXTRACTION_SYSTEM_PROMPT = """You are a legal petition style and structure extractor for US immigration petitions.
+EXTRACTION_SYSTEM_PROMPT = """You are a legal petition structure extractor for US immigration petitions.
 
-Analyze the provided petition text and extract its reusable drafting structure for the given section.
+Your ONLY job is to extract the reusable RHETORICAL STRUCTURE and ARGUMENT SEQUENCE from the provided text.
 
-Rules:
-- Replace ALL case-specific facts with evidence placeholders like [EVIDENCE: description]
-- Preserve rhetorical sequence, sentence cadence, and persuasive framing
-- Never copy names, dates, institutions, metrics, or achievements
-- Never treat the text as factual evidence
-- Output ONLY valid JSON — no preamble, no markdown
+ABSOLUTE RULES — violations will make the output useless:
+- NEVER include any person's name (petitioner, expert, attorney, anyone)
+- NEVER include any field, profession, or industry (architecture, medicine, engineering, etc.)
+- NEVER include any institution, university, company, or organization name
+- NEVER include any country, city, or location
+- NEVER include any date, year, or time period
+- NEVER include any degree name or credential
+- NEVER include any specific technology, methodology, or technique name
+- NEVER include any statistic, metric, or quantitative claim
 
-Output JSON with this exact structure:
+REPLACE all of the above with evidence placeholders:
+- Person names → [EVIDENCE: petitioner name] or [EVIDENCE: expert name]
+- Fields/professions → [EVIDENCE: field of expertise]
+- Institutions → [EVIDENCE: institution name]
+- Locations → [EVIDENCE: location]
+- Dates → [EVIDENCE: date/year]
+- Degrees → [EVIDENCE: degree and field]
+- Technologies → [EVIDENCE: specific methodology or technology]
+- Metrics → [EVIDENCE: quantitative impact data]
+
+PRESERVE ONLY:
+- Sentence structure and rhetorical flow
+- Legal argument sequencing
+- Persuasive framing and transitions
+- Dhanasar prong logic
+- Formal legal tone
+
+Output ONLY valid JSON — no preamble, no markdown, no explanation:
 {
-  "template_text": "The full abstracted template with [EVIDENCE: ...] placeholders",
+  "template_text": "The full abstracted template with [EVIDENCE: ...] placeholders only",
   "evidence_placeholders": ["list of placeholder descriptions"],
-  "argument_sequence": ["step 1 description", "step 2 description", ...],
+  "argument_sequence": ["step 1", "step 2", ...],
   "tone_guidance": "Brief description of tone and rhetorical approach",
   "confidence": 0.0 to 1.0
 }"""
