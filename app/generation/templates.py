@@ -196,9 +196,8 @@ def get_kb_style_guidance(
     if not rows:
         return (None, [])
 
-    chunk_ids = [row[0] for row in rows]
     guidance = "\n\n".join(
         f"[KB TEMPLATE - {row[2]} (confidence: {row[3]})]\n{row[1]}"
         for row in rows
     )
-    return (guidance, chunk_ids)
+    return (guidance, [])
