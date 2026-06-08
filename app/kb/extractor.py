@@ -3,6 +3,7 @@
 Reads kb_chunks, calls LLM to extract rhetorical scaffolds with evidence
 placeholders, writes KBTemplate rows. Never raises.
 """
+import hashlib
 import json
 import logging
 import os
@@ -21,6 +22,13 @@ EXTRACTION_PROMPT_VERSION = "1.0"
 EXTRACTION_MODEL = os.environ.get("GENERATION_MODEL", "gpt-4o")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
 EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", 1536))
+
+
+def _normalize_and_hash(text: str) -> str:
+    import re
+    normalized = re.sub(r'\s+', ' ', text.strip().lower())
+    return hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+
 
 SECTION_EXTRACTION_PROMPTS = {
     "introduction": "Extract the reusable Introduction drafting pattern. Preserve rhetorical sequence, formal opening, petition identification, preview of Dhanasar prongs. Replace all facts with placeholders such as [EVIDENCE: petitioner identity], [EVIDENCE: proposed endeavor], [EVIDENCE: prong summary].",
@@ -86,6 +94,24 @@ def extract_kb_template(
         if chunk is None:
             return {"status": "failed", "reason": "chunk_not_found"}
 
+        # Idempotency check — skip if already extracted
+        existing = (
+            db.query(KBTemplate)
+            .filter(
+                KBTemplate.kb_chunk_id == kb_chunk_id,
+                KBTemplate.section_key == section_key,
+            )
+            .first()
+        )
+        if existing:
+            return {
+                "status": "exists",
+                "kb_template_id": existing.id,
+                "section_key": section_key,
+            }
+
+        content_hash = _normalize_and_hash(chunk.text)
+
         section_prompt = SECTION_EXTRACTION_PROMPTS.get(section_key)
         if section_prompt is None:
             return {"status": "failed", "reason": "unsupported_section_key"}
@@ -140,6 +166,7 @@ def extract_kb_template(
             argument_sequence=parsed.get("argument_sequence"),
             tone_guidance=parsed.get("tone_guidance"),
             confidence=parsed.get("confidence"),
+            content_hash=content_hash,
             extraction_prompt_version=EXTRACTION_PROMPT_VERSION,
             created_at=datetime.utcnow(),
         )
