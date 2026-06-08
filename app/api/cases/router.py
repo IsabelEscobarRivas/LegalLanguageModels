@@ -50,6 +50,7 @@ def create_case(
         case_ref=payload.case_ref,
         visa_type=payload.visa_type,
         firm_id=claims.firm_id,
+        applicant_name=payload.applicant_name,
     )
     db.add(case)
     try:

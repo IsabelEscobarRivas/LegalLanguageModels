@@ -8,6 +8,7 @@ import openai
 from sqlalchemy.orm import Session
 
 from app.core.models import (
+    Case,
     Chunk,
     ClassificationResult,
     CriteriaReference,
@@ -380,10 +381,16 @@ def _generate_section(
         )
 
         evidence_items = _format_evidence_items(evidence_results)
+        case = db.query(Case).filter(Case.id == case_id).first()
+        applicant_name = (
+            case.applicant_name
+            if case and case.applicant_name
+            else "the applicant"
+        )
         variables = {
             "visa_type": visa_type,
             "section_name": section_code.replace("_", " ").title(),
-            "applicant_name": "the applicant",
+            "applicant_name": applicant_name,
             "evidence_items": evidence_items,
             "coverage_summary": str(coverage_summary),
             "section_summaries": _format_prior_sections(prior_sections),

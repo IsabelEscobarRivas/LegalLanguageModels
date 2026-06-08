@@ -1283,6 +1283,7 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
     const [kbDocumentType, setKbDocumentType] = useState('style_guide');
     const [kbFile, setKbFile] = useState(null);
     const [kbUploading, setKbUploading] = useState(false);
+    const [newApplicantName, setNewApplicantName] = useState('');
     const [newCaseRef, setNewCaseRef] = useState('');
     const [localCaseId, setLocalCaseId] = useState(caseId || '');
     const [localVisaType, setLocalVisaType] = useState(visaType || 'EB2');
@@ -1379,6 +1380,7 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
             const created = await window.V2ApiService.createCase({
                 case_ref: newCaseRef.trim(),
                 visa_type: localVisaType,
+                applicant_name: newApplicantName.trim() || null,
             });
             setCaseId(created.id);
             setLocalCaseId(created.id);
@@ -1621,6 +1623,16 @@ function CaseDashboard({ caseId, setCaseId, visaType, setVisaType, onReviewDraft
                         </button>
                     </div>
                     <div className="border-t pt-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Applicant Name
+                        </label>
+                        <input
+                            type="text"
+                            value={newApplicantName}
+                            onChange={function(e) { setNewApplicantName(e.target.value); }}
+                            className="w-full p-2 border rounded mb-2"
+                            placeholder="e.g. Dr. Jane Smith"
+                        />
                         <label className="block text-sm font-medium text-gray-700 mb-1">New Case Reference</label>
                         <div className="flex flex-wrap gap-2">
                             <input

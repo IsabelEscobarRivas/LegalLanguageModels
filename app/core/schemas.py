@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class CaseCreate(BaseModel):
     case_ref: str = Field(..., min_length=1, max_length=100)
     visa_type: Literal["EB1", "EB2"]
+    applicant_name: Optional[str] = None
 
 
 class CaseResponse(BaseModel):
@@ -21,6 +22,7 @@ class CaseResponse(BaseModel):
 
     id: str
     case_ref: str
+    applicant_name: Optional[str] = None
     visa_type: str
     status: str
     created_at: datetime

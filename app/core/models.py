@@ -83,6 +83,7 @@ class Case(Base):
         index=True,
     )
     case_ref = Column(String(100), nullable=False, unique=True, index=True)
+    applicant_name = Column(String(255), nullable=True)
     visa_type = Column(String(20), nullable=False)
     status = Column(
         String(30),
