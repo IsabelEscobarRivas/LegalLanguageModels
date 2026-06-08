@@ -6,7 +6,7 @@ import openai
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.core.models import PromptTemplate
+from app.core.models import KBTemplate, PromptTemplate
 from app.ingestion.embedder import EMBEDDING_DIMENSIONS, EMBEDDING_MODEL
 
 
@@ -164,23 +164,25 @@ def get_kb_style_guidance(
         rows = db.execute(
             text(
                 """
-                SELECT kc.id, kc.text, kc.chunk_index
-                FROM kb_chunks kc
-                JOIN kb_embeddings ke ON ke.kb_chunk_id = kc.id
-                WHERE kc.firm_id = :firm_id
+                SELECT kt.id, kt.template_text, kt.section_key, kt.confidence
+                FROM kb_templates kt
+                JOIN kb_chunks kc ON kc.id = kt.kb_chunk_id
+                WHERE kt.firm_id = :firm_id
+                  AND kt.section_key = :section_code
                   AND kc.kb_document_id IN (
                       SELECT id FROM kb_documents
                       WHERE firm_id = :firm_id
                         AND document_type = ANY(:allowed_types)
                         AND lifecycle_state = 'indexed'
                   )
-                  AND ke.firm_id = :firm_id
-                ORDER BY ke.embedding <=> CAST(:query_vec AS vector)
+                  AND kt.embedding IS NOT NULL
+                ORDER BY kt.embedding <=> CAST(:query_vec AS vector)
                 LIMIT 3
                 """
             ),
             {
                 "firm_id": firm_id,
+                "section_code": section_code,
                 "allowed_types": allowed_types,
                 "query_vec": str(query_vector),
             },
@@ -196,6 +198,7 @@ def get_kb_style_guidance(
 
     chunk_ids = [row[0] for row in rows]
     guidance = "\n\n".join(
-        f"Style guidance ({row[2]}): {row[1]}" for row in rows
+        f"[KB TEMPLATE - {row[2]} (confidence: {row[3]})]\n{row[1]}"
+        for row in rows
     )
     return (guidance, chunk_ids)
