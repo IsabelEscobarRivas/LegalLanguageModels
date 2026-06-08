@@ -551,6 +551,26 @@ const DocumentIngestion = ({ caseId, setCaseId, visaType, setVisaType }) => {
     );
 };
 
+const PRONG_GROUPS = [
+    { key: 'preamble', label: 'Petition Preamble', codes: ['introduction', 'statement_of_law', 'advanced_degree_qualification'] },
+    { key: 'prong1', label: 'Prong 1 — Substantial Merit and National Importance', codes: ['prong1_endeavor_description', 'prong1_substantial_merit', 'prong1_national_importance_welfare', 'prong1_national_importance_initiative'] },
+    { key: 'prong2', label: 'Prong 2 — Well Positioned to Advance the Endeavor', codes: ['prong2_educational_background', 'prong2_certifications_licensure', 'prong2_professional_experience', 'prong2_professional_memberships', 'prong2_lectures_presentations', 'prong2_peer_recognition', 'prong2_expert_opinion_base'] },
+    { key: 'prong3', label: 'Prong 3 — Benefit to the United States Without Labor Certification', codes: ['prong3_endeavor_flexibility', 'prong3_public_interest', 'prong3_labor_market_shortage', 'prong3_no_adverse_effect', 'prong3_economic_benefit'] },
+    { key: 'conclusion', label: 'Conclusion', codes: ['petition_conclusion', 'conclusion'] },
+];
+
+function getSectionGroup(section_code) {
+    if (section_code && section_code.startsWith('prong2_expert_opinion_')) {
+        return PRONG_GROUPS[2];
+    }
+    for (var i = 0; i < PRONG_GROUPS.length; i++) {
+        if (PRONG_GROUPS[i].codes.indexOf(section_code) !== -1) {
+            return PRONG_GROUPS[i];
+        }
+    }
+    return { key: 'other', label: 'Additional Sections' };
+}
+
 const SECTION_LABELS = {
     background: 'Background',
     experience: 'Experience',
@@ -558,6 +578,26 @@ const SECTION_LABELS = {
     achievements: 'Achievements',
     impact: 'Impact',
     conclusion: 'Conclusion',
+    introduction: 'Introduction',
+    statement_of_law: 'Statement of the Law',
+    advanced_degree_qualification: 'Advanced Degree Qualification',
+    prong1_endeavor_description: 'Proposed Endeavor',
+    prong1_substantial_merit: 'Substantial Merit',
+    prong1_national_importance_welfare: 'National Importance — Societal Welfare',
+    prong1_national_importance_initiative: 'National Importance — Federal Initiatives',
+    prong2_educational_background: 'Educational Background',
+    prong2_certifications_licensure: 'Certifications and Licensure',
+    prong2_professional_experience: 'Professional Experience',
+    prong2_professional_memberships: 'Professional Memberships',
+    prong2_lectures_presentations: 'Lectures, Presentations and Contributions',
+    prong2_peer_recognition: 'Recognition by Peers and Industry Leaders',
+    prong2_expert_opinion_base: 'Expert Opinion',
+    prong3_endeavor_flexibility: 'Endeavor Flexibility',
+    prong3_public_interest: 'Public Interest',
+    prong3_labor_market_shortage: 'Labor Market Shortage',
+    prong3_no_adverse_effect: 'No Adverse Effect on US Workers',
+    prong3_economic_benefit: 'Economic Benefit',
+    petition_conclusion: 'Conclusion',
 };
 
 function formatSectionCode(code) {
@@ -852,106 +892,130 @@ function DraftReviewScreen({ caseId, draftId, visaType, onBack }) {
                 <p className="mb-4 text-sm text-blue-700 bg-blue-50 p-2 rounded">{actionMessage}</p>
             )}
 
-            {orderedSections.map(function(section) {
-                const review = reviewBySectionId[section.id] || {};
-                const displayContent = review.latest_action === 'edited' && review.reviewer_edit
-                    ? review.reviewer_edit
-                    : section.content;
-                const statusLabel = review.latest_action || 'pending';
+            {(function() {
+                var groups = {};
+                var groupOrder = [];
+                orderedSections.forEach(function(section) {
+                    var group = getSectionGroup(section.section_code);
+                    if (!groups[group.key]) {
+                        groups[group.key] = { label: group.label, sections: [] };
+                        groupOrder.push(group.key);
+                    }
+                    groups[group.key].sections.push(section);
+                });
+                return groupOrder.map(function(groupKey) {
+                    var group = groups[groupKey];
+                    return (
+                        <div key={groupKey} className="mb-8">
+                            <div className="sticky top-0 z-10 bg-gray-100 border-l-4 border-[#1a365d] px-4 py-2 mb-4 rounded">
+                                <h2 className="text-sm font-bold text-[#1a365d] uppercase tracking-wide">
+                                    {group.label}
+                                </h2>
+                            </div>
+                            {group.sections.map(function(section) {
+                                const review = reviewBySectionId[section.id] || {};
+                                const displayContent = review.latest_action === 'edited' && review.reviewer_edit
+                                    ? review.reviewer_edit
+                                    : section.content;
+                                const statusLabel = review.latest_action || 'pending';
 
-                return (
-                    <div key={section.id} className="bg-white rounded-lg shadow p-6 mb-6">
-                        <div className="flex flex-wrap items-center gap-2 mb-4">
-                            <h2 className="text-lg font-semibold text-[#1a365d]">
-                                {formatSectionCode(section.section_code)}
-                            </h2>
-                            <span className={'text-xs px-2 py-1 rounded ' + reviewBadgeClass(review.latest_action)}>
-                                {statusLabel}
-                            </span>
-                            {section.kb_guidance_applied && (
-                                <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-800">
-                                    KB Guided
-                                </span>
-                            )}
+                                return (
+                                    <div key={section.id} className="bg-white rounded-lg shadow p-6 mb-6">
+                                        <div className="flex flex-wrap items-center gap-2 mb-4">
+                                            <h2 className="text-lg font-semibold text-[#1a365d]">
+                                                {formatSectionCode(section.section_code)}
+                                            </h2>
+                                            <span className={'text-xs px-2 py-1 rounded ' + reviewBadgeClass(review.latest_action)}>
+                                                {statusLabel}
+                                            </span>
+                                            {section.kb_guidance_applied && (
+                                                <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-800">
+                                                    KB Guided
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {editingSection === section.id ? (
+                                            <div className="mb-4">
+                                                <textarea
+                                                    className="w-full p-3 border rounded h-48"
+                                                    value={editText}
+                                                    onChange={function(e) { setEditText(e.target.value); }}
+                                                />
+                                                <div className="mt-2 flex gap-2">
+                                                    <button
+                                                        onClick={function() { handleSaveEdit(section.id); }}
+                                                        className="bg-[#1a365d] text-white px-4 py-2 rounded"
+                                                    >
+                                                        Save Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={function() { setEditingSection(null); setEditText(''); }}
+                                                        className="bg-gray-200 px-4 py-2 rounded"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="prose max-w-none mb-4">
+                                                <p className="whitespace-pre-wrap text-gray-800 text-sm leading-relaxed">
+                                                    {displayContent}
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        <button
+                                            onClick={function() {
+                                                setOpenProvenance(openProvenance === section.id ? null : section.id);
+                                            }}
+                                            className="text-sm text-[#1a365d] underline mb-4"
+                                        >
+                                            {openProvenance === section.id ? 'Hide Provenance' : 'Show Provenance'}
+                                        </button>
+
+                                        {openProvenance === section.id && (
+                                            <ProvenanceInspector
+                                                section={section}
+                                                traces={section.traces || []}
+                                                kbGuidanceApplied={section.kb_guidance_applied}
+                                                kbTraceCount={section.kb_trace_count}
+                                                onFeedback={handleClassificationFeedback}
+                                            />
+                                        )}
+
+                                        {editingSection !== section.id && (
+                                            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t">
+                                                <button
+                                                    onClick={function() { handleApprove(section.id); }}
+                                                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                                                >
+                                                    Approve
+                                                </button>
+                                                <button
+                                                    onClick={function() {
+                                                        setEditingSection(section.id);
+                                                        setEditText(displayContent);
+                                                    }}
+                                                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    onClick={function() { handleRejectRegenerate(section.id); }}
+                                                    className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+                                                >
+                                                    Reject + Regenerate
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
-
-                        {editingSection === section.id ? (
-                            <div className="mb-4">
-                                <textarea
-                                    className="w-full p-3 border rounded h-48"
-                                    value={editText}
-                                    onChange={function(e) { setEditText(e.target.value); }}
-                                />
-                                <div className="mt-2 flex gap-2">
-                                    <button
-                                        onClick={function() { handleSaveEdit(section.id); }}
-                                        className="bg-[#1a365d] text-white px-4 py-2 rounded"
-                                    >
-                                        Save Edit
-                                    </button>
-                                    <button
-                                        onClick={function() { setEditingSection(null); setEditText(''); }}
-                                        className="bg-gray-200 px-4 py-2 rounded"
-                                    >
-                                        Cancel
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="prose max-w-none mb-4">
-                                <p className="whitespace-pre-wrap text-gray-800 text-sm leading-relaxed">
-                                    {displayContent}
-                                </p>
-                            </div>
-                        )}
-
-                        <button
-                            onClick={function() {
-                                setOpenProvenance(openProvenance === section.id ? null : section.id);
-                            }}
-                            className="text-sm text-[#1a365d] underline mb-4"
-                        >
-                            {openProvenance === section.id ? 'Hide Provenance' : 'Show Provenance'}
-                        </button>
-
-                        {openProvenance === section.id && (
-                            <ProvenanceInspector
-                                section={section}
-                                traces={section.traces || []}
-                                kbGuidanceApplied={section.kb_guidance_applied}
-                                kbTraceCount={section.kb_trace_count}
-                                onFeedback={handleClassificationFeedback}
-                            />
-                        )}
-
-                        {editingSection !== section.id && (
-                            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t">
-                                <button
-                                    onClick={function() { handleApprove(section.id); }}
-                                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-                                >
-                                    Approve
-                                </button>
-                                <button
-                                    onClick={function() {
-                                        setEditingSection(section.id);
-                                        setEditText(displayContent);
-                                    }}
-                                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                                >
-                                    Edit
-                                </button>
-                                <button
-                                    onClick={function() { handleRejectRegenerate(section.id); }}
-                                    className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
-                                >
-                                    Reject + Regenerate
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                );
-            })}
+                    );
+                });
+            })()}
 
             {reviewStatus && reviewStatus.export_eligible && (
                 <div className="bg-white rounded-lg shadow p-6 mb-6">
