@@ -188,8 +188,10 @@ def _extract_pdf(file_bytes: bytes) -> ExtractionResult:
     text = _try_textract(file_bytes)
     if text.strip():
         return ExtractionResult(
-            text=text, method="textract",
-            status="completed", page_count=page_count
+            text=text,
+            method="textract",
+            status="completed",
+            page_count=page_count
         )
 
     # OCR path (handles both missing and corrupt text)
